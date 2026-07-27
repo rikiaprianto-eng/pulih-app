@@ -16,27 +16,59 @@ import Footer from "@/components/Footer";
 import { paymentMethods, Package } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
 import { useAuth } from "@/lib/useAuth";
-import { fetchPackages, createCheckout } from "@/lib/queries";
+import { fetchPackages, createCheckout, fetchSiteSettings, createMidtransTransaction, SiteSettings } from "@/lib/queries";
 
 type Step = "package" | "payment" | "success";
+
+declare global {
+  interface Window {
+    snap?: {
+      pay: (
+        token: string,
+        callbacks: {
+          onSuccess?: () => void;
+          onPending?: () => void;
+          onError?: () => void;
+          onClose?: () => void;
+        }
+      ) => void;
+    };
+  }
+}
 
 export default function PricingPage() {
   const router = useRouter();
   const { profile } = useAuth();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [step, setStep] = useState<Step>("package");
   const [selectedPkg, setSelectedPkg] = useState<Package | null>(null);
   const [selectedMethod, setSelectedMethod] = useState(paymentMethods[0]);
   const [processing, setProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
+  const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
+
   useEffect(() => {
-    fetchPackages().then((pkgs) => {
+    Promise.all([fetchPackages(), fetchSiteSettings()]).then(([pkgs, s]) => {
       setPackages(pkgs);
+      setSettings(s);
       setLoadingPackages(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (!settings?.midtransClientKey || settings.paymentGateway !== "midtrans") return;
+    if (document.getElementById("midtrans-snap-script")) return;
+    const script = document.createElement("script");
+    script.id = "midtrans-snap-script";
+    script.src = settings.midtransIsProduction
+      ? "https://app.midtrans.com/snap/snap.js"
+      : "https://app.sandbox.midtrans.com/snap/snap.js";
+    script.setAttribute("data-client-key", settings.midtransClientKey);
+    document.body.appendChild(script);
+  }, [settings]);
 
   function choosePackage(pkg: Package) {
     setSelectedPkg(pkg);
@@ -51,6 +83,24 @@ export default function PricingPage() {
     }
     setPayError(null);
     setProcessing(true);
+
+    if (useMidtrans) {
+      try {
+        const { token } = await createMidtransTransaction(selectedPkg.id);
+        if (!window.snap) throw new Error("Midtrans belum siap, coba lagi sebentar.");
+        window.snap.pay(token, {
+          onSuccess: () => setStep("success"),
+          onPending: () => setStep("success"),
+          onError: () => setPayError("Pembayaran gagal. Coba lagi."),
+          onClose: () => setProcessing(false),
+        });
+      } catch (err) {
+        setPayError(err instanceof Error ? err.message : "Gagal memulai pembayaran.");
+        setProcessing(false);
+      }
+      return;
+    }
+
     try {
       await createCheckout(profile.id, selectedPkg, selectedMethod.name);
       setStep("success");
@@ -165,65 +215,86 @@ export default function PricingPage() {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
                 <div className="lg:col-span-3">
                   <div className="rounded-2xl border border-slate-100 bg-white p-6">
-                    <h2 className="font-heading text-base font-semibold text-slate-900">
-                      Pilih Metode Pembayaran
-                    </h2>
+                    {useMidtrans ? (
+                      <>
+                        <h2 className="font-heading text-base font-semibold text-slate-900">
+                          Pembayaran Otomatis
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Klik &ldquo;Bayar Sekarang&rdquo; — jendela pembayaran Midtrans akan
+                          terbuka dengan pilihan QRIS, Virtual Account, dan e-Wallet. Status
+                          pembayaranmu akan terverifikasi otomatis begitu selesai.
+                        </p>
+                        {settings?.bankName && (
+                          <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">
+                            Transfer manual juga tersedia ke {settings.bankName} a.n.{" "}
+                            {settings.bankAccountHolder} ({settings.bankAccountNumber}).
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="font-heading text-base font-semibold text-slate-900">
+                          Pilih Metode Pembayaran
+                        </h2>
 
-                    <PaymentGroup
-                      icon={<QrCode size={16} />}
-                      label="QRIS"
-                      methods={paymentMethods.filter((m) => m.category === "qris")}
-                      selected={selectedMethod}
-                      onSelect={setSelectedMethod}
-                    />
-                    <PaymentGroup
-                      icon={<Building2 size={16} />}
-                      label="Virtual Account"
-                      methods={paymentMethods.filter((m) => m.category === "va")}
-                      selected={selectedMethod}
-                      onSelect={setSelectedMethod}
-                    />
-                    <PaymentGroup
-                      icon={<Wallet size={16} />}
-                      label="E-Wallet"
-                      methods={paymentMethods.filter((m) => m.category === "ewallet")}
-                      selected={selectedMethod}
-                      onSelect={setSelectedMethod}
-                    />
-
-                    {selectedMethod.category === "qris" && (
-                      <div className="mt-6 flex flex-col items-center rounded-2xl border border-dashed border-slate-200 p-6">
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=PULIH-DUMMY-QR-${selectedPkg.id}`}
-                          alt="QRIS dummy"
-                          className="h-48 w-48"
+                        <PaymentGroup
+                          icon={<QrCode size={16} />}
+                          label="QRIS"
+                          methods={paymentMethods.filter((m) => m.category === "qris")}
+                          selected={selectedMethod}
+                          onSelect={setSelectedMethod}
                         />
-                        <p className="mt-3 text-center text-xs text-slate-500">
-                          Scan kode QR di atas menggunakan aplikasi mobile banking atau e-wallet
-                          favoritmu. (QR demo)
-                        </p>
-                      </div>
-                    )}
+                        <PaymentGroup
+                          icon={<Building2 size={16} />}
+                          label="Virtual Account"
+                          methods={paymentMethods.filter((m) => m.category === "va")}
+                          selected={selectedMethod}
+                          onSelect={setSelectedMethod}
+                        />
+                        <PaymentGroup
+                          icon={<Wallet size={16} />}
+                          label="E-Wallet"
+                          methods={paymentMethods.filter((m) => m.category === "ewallet")}
+                          selected={selectedMethod}
+                          onSelect={setSelectedMethod}
+                        />
 
-                    {selectedMethod.category === "va" && (
-                      <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
-                        <p className="text-xs text-slate-500">Nomor Virtual Account</p>
-                        <p className="mt-1 font-heading text-xl font-bold tracking-wider text-slate-900">
-                          8808 8812 3456 7890
-                        </p>
-                        <p className="mt-2 text-xs text-slate-400">
-                          Transfer melalui {selectedMethod.name} sebelum 24 jam. (Nomor demo)
-                        </p>
-                      </div>
-                    )}
+                        {selectedMethod.category === "qris" && (
+                          <div className="mt-6 flex flex-col items-center rounded-2xl border border-dashed border-slate-200 p-6">
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=PULIH-DUMMY-QR-${selectedPkg.id}`}
+                              alt="QRIS dummy"
+                              className="h-48 w-48"
+                            />
+                            <p className="mt-3 text-center text-xs text-slate-500">
+                              Scan kode QR di atas menggunakan aplikasi mobile banking atau
+                              e-wallet favoritmu. (QR demo)
+                            </p>
+                          </div>
+                        )}
 
-                    {selectedMethod.category === "ewallet" && (
-                      <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
-                        <p className="text-sm text-slate-600">
-                          Kamu akan diarahkan ke aplikasi {selectedMethod.name} untuk
-                          menyelesaikan pembayaran. (Simulasi demo)
-                        </p>
-                      </div>
+                        {selectedMethod.category === "va" && (
+                          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+                            <p className="text-xs text-slate-500">Nomor Virtual Account</p>
+                            <p className="mt-1 font-heading text-xl font-bold tracking-wider text-slate-900">
+                              {settings?.bankAccountNumber || "8808 8812 3456 7890"}
+                            </p>
+                            <p className="mt-2 text-xs text-slate-400">
+                              Transfer melalui {selectedMethod.name} sebelum 24 jam. (Nomor demo)
+                            </p>
+                          </div>
+                        )}
+
+                        {selectedMethod.category === "ewallet" && (
+                          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+                            <p className="text-sm text-slate-600">
+                              Kamu akan diarahkan ke aplikasi {selectedMethod.name} untuk
+                              menyelesaikan pembayaran. (Simulasi demo)
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

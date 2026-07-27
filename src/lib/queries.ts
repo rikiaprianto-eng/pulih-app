@@ -647,3 +647,139 @@ export async function createUserAsAdmin(
   });
   if (error) throw error;
 }
+
+// ---------------------------------------------------------------------------
+// Site settings (company info, bank display, payment gateway toggle)
+// ---------------------------------------------------------------------------
+
+export type SiteSettings = {
+  contactEmail: string;
+  contactPhone: string;
+  aboutText: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
+  paymentGateway: "manual" | "midtrans";
+  midtransClientKey: string;
+  midtransIsProduction: boolean;
+};
+
+const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  contactEmail: "halo@pulih.id",
+  contactPhone: "0800-1-PULIH",
+  aboutText: "Platform konseling psikologi online tepercaya untuk kesehatan mentalmu.",
+  bankName: "",
+  bankAccountNumber: "",
+  bankAccountHolder: "",
+  paymentGateway: "manual",
+  midtransClientKey: "",
+  midtransIsProduction: false,
+};
+
+export async function fetchSiteSettings(): Promise<SiteSettings> {
+  const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
+  if (error || !data) return DEFAULT_SITE_SETTINGS;
+  return {
+    contactEmail: data.contact_email ?? DEFAULT_SITE_SETTINGS.contactEmail,
+    contactPhone: data.contact_phone ?? DEFAULT_SITE_SETTINGS.contactPhone,
+    aboutText: data.about_text ?? DEFAULT_SITE_SETTINGS.aboutText,
+    bankName: data.bank_name ?? "",
+    bankAccountNumber: data.bank_account_number ?? "",
+    bankAccountHolder: data.bank_account_holder ?? "",
+    paymentGateway: data.payment_gateway === "midtrans" ? "midtrans" : "manual",
+    midtransClientKey: data.midtrans_client_key ?? "",
+    midtransIsProduction: !!data.midtrans_is_production,
+  };
+}
+
+export async function updateSiteSettings(fields: SiteSettings) {
+  await supabase
+    .from("site_settings")
+    .update({
+      contact_email: fields.contactEmail,
+      contact_phone: fields.contactPhone,
+      about_text: fields.aboutText,
+      bank_name: fields.bankName,
+      bank_account_number: fields.bankAccountNumber,
+      bank_account_holder: fields.bankAccountHolder,
+      payment_gateway: fields.paymentGateway,
+      midtrans_client_key: fields.midtransClientKey,
+      midtrans_is_production: fields.midtransIsProduction,
+    })
+    .eq("id", 1);
+}
+
+// ---------------------------------------------------------------------------
+// Banner image upload (Supabase Storage)
+// ---------------------------------------------------------------------------
+
+export async function uploadBannerImage(file: File): Promise<string> {
+  const ext = file.name.split(".").pop();
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("banners").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from("banners").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ---------------------------------------------------------------------------
+// Payment gateway (Midtrans) — secure operations routed through Netlify Functions,
+// never talking to payment_secrets directly (that table has no client-readable RLS).
+// ---------------------------------------------------------------------------
+
+export async function saveMidtransServerKey(serverKey: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("Belum login.");
+
+  const res = await fetch("/.netlify/functions/save-payment-secret", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ midtransServerKey: serverKey }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Gagal menyimpan Server Key.");
+  }
+}
+
+export async function createMidtransTransaction(
+  packageId: string
+): Promise<{ token: string; transactionId: string; redirectUrl: string }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("Belum login.");
+
+  const res = await fetch("/.netlify/functions/create-midtrans-transaction", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ packageId }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? "Gagal memulai pembayaran.");
+  return body;
+}
+
+export async function fetchPaymentSecretStatus(): Promise<{ configured: boolean }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { configured: false };
+
+  const res = await fetch("/.netlify/functions/save-payment-secret", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) return { configured: false };
+  return res.json();
+}

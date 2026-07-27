@@ -18,6 +18,9 @@ import {
   Plus,
   Trash2,
   CalendarDays,
+  Settings,
+  Upload,
+  ShieldCheck,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { useRequireAuth } from "@/lib/useAuth";
@@ -28,6 +31,11 @@ import {
   fetchBanners,
   fetchPackages,
   fetchEvents,
+  fetchSiteSettings,
+  updateSiteSettings,
+  fetchPaymentSecretStatus,
+  saveMidtransServerKey,
+  uploadBannerImage,
   verifyPayment,
   updatePackage,
   createPackage,
@@ -40,6 +48,7 @@ import {
   AdminUserView,
   PendingPaymentView,
   AdminStats,
+  SiteSettings,
 } from "@/lib/queries";
 import type { Banner, Package, EventItem } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
@@ -57,6 +66,7 @@ const tabs = [
   { id: "payments", label: "Manajemen Pembayaran", icon: CreditCard },
   { id: "content", label: "Manajemen Konten", icon: ImageIcon },
   { id: "pricing", label: "Manajemen Harga", icon: Tag },
+  { id: "settings", label: "Setting", icon: Settings },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -89,6 +99,8 @@ export default function AdminPage() {
   const [addingPackage, setAddingPackage] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [secretConfigured, setSecretConfigured] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
@@ -105,13 +117,17 @@ export default function AdminPage() {
       fetchBanners(),
       fetchPackages(),
       fetchEvents(),
-    ]).then(([u, p, s, b, pkgs, ev]) => {
+      fetchSiteSettings(),
+      fetchPaymentSecretStatus(),
+    ]).then(([u, p, s, b, pkgs, ev, settingsData, secretStatus]) => {
       setUsers(u);
       setPayments(p);
       setStats(s);
       setBanners(b);
       setPackages(pkgs);
       setEvents(ev);
+      setSettings(settingsData);
+      setSecretConfigured(secretStatus.configured);
       setLoading(false);
     });
   }
@@ -179,6 +195,16 @@ export default function AdminPage() {
     await createUserAsAdmin(fields.email, fields.password, fields.name, fields.role);
     setAddingUser(false);
     reload();
+  }
+
+  async function handleSaveSettings(next: SiteSettings) {
+    await updateSiteSettings(next);
+    setSettings(next);
+  }
+
+  async function handleSaveServerKey(key: string) {
+    await saveMidtransServerKey(key);
+    setSecretConfigured(true);
   }
 
   if (authLoading || !profile) {
@@ -523,6 +549,15 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
+
+              {tab === "settings" && settings && (
+                <SettingsTab
+                  settings={settings}
+                  secretConfigured={secretConfigured}
+                  onSaveSettings={handleSaveSettings}
+                  onSaveServerKey={handleSaveServerKey}
+                />
+              )}
             </>
           )}
         </main>
@@ -722,6 +757,23 @@ function EditBannerModal({
 }) {
   const [form, setForm] = useState(banner);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const url = await uploadBannerImage(file);
+      setForm((f) => ({ ...f, image: url }));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <ModalShell
@@ -741,14 +793,19 @@ function EditBannerModal({
         onChange={(v) => setForm({ ...form, subtitle: v })}
       />
       <Field label="Tautan" value={form.href} onChange={(v) => setForm({ ...form, href: v })} />
-      <Field
-        label="URL Gambar"
-        value={form.image}
-        onChange={(v) => setForm({ ...form, image: v })}
-      />
-      {form.image && (
-        <img src={form.image} alt="" className="h-20 w-full rounded-lg object-cover" />
-      )}
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Gambar Banner</label>
+        {form.image && (
+          <img src={form.image} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />
+        )}
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
+        </label>
+        {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
+      </div>
     </ModalShell>
   );
 }
@@ -917,6 +974,213 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
       />
+    </div>
+  );
+}
+
+function SettingsCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white p-5">
+      <h3 className="font-heading text-sm font-semibold text-slate-900">{title}</h3>
+      <div className="mt-4 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function SettingsTab({
+  settings,
+  secretConfigured,
+  onSaveSettings,
+  onSaveServerKey,
+}: {
+  settings: SiteSettings;
+  secretConfigured: boolean;
+  onSaveSettings: (s: SiteSettings) => Promise<void>;
+  onSaveServerKey: (key: string) => Promise<void>;
+}) {
+  const [form, setForm] = useState(settings);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingBank, setSavingBank] = useState(false);
+  const [savingGateway, setSavingGateway] = useState(false);
+  const [savedFlag, setSavedFlag] = useState<string | null>(null);
+  const [serverKeyInput, setServerKeyInput] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+
+  function flashSaved(section: string) {
+    setSavedFlag(section);
+    setTimeout(() => setSavedFlag(null), 2000);
+  }
+
+  return (
+    <div>
+      <h1 className="font-heading text-xl font-bold text-slate-900">Pengaturan</h1>
+      <p className="mt-1 text-sm text-slate-500">
+        Kelola informasi umum, rekening tujuan, dan integrasi pembayaran.
+      </p>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SettingsCard title="Informasi Umum">
+          <Field
+            label="Email Kontak"
+            value={form.contactEmail}
+            onChange={(v) => setForm({ ...form, contactEmail: v })}
+          />
+          <Field
+            label="Telepon Kontak"
+            value={form.contactPhone}
+            onChange={(v) => setForm({ ...form, contactPhone: v })}
+          />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Tentang Kami</label>
+            <textarea
+              value={form.aboutText}
+              onChange={(e) => setForm({ ...form, aboutText: e.target.value })}
+              rows={3}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+            />
+          </div>
+          <button
+            onClick={async () => {
+              setSavingGeneral(true);
+              await onSaveSettings(form);
+              setSavingGeneral(false);
+              flashSaved("general");
+            }}
+            disabled={savingGeneral}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+          >
+            {savingGeneral && <Loader2 size={13} className="animate-spin" />}
+            {savedFlag === "general" ? <Check size={13} /> : null}
+            Simpan
+          </button>
+        </SettingsCard>
+
+        <SettingsCard title="Rekening Bank Tujuan">
+          <p className="text-xs text-slate-500">
+            Ditampilkan ke pasien sebagai instruksi transfer manual (di luar pembayaran otomatis Midtrans).
+          </p>
+          <Field
+            label="Nama Bank"
+            value={form.bankName}
+            onChange={(v) => setForm({ ...form, bankName: v })}
+          />
+          <Field
+            label="Nomor Rekening"
+            value={form.bankAccountNumber}
+            onChange={(v) => setForm({ ...form, bankAccountNumber: v })}
+          />
+          <Field
+            label="Nama Pemilik Rekening"
+            value={form.bankAccountHolder}
+            onChange={(v) => setForm({ ...form, bankAccountHolder: v })}
+          />
+          <button
+            onClick={async () => {
+              setSavingBank(true);
+              await onSaveSettings(form);
+              setSavingBank(false);
+              flashSaved("bank");
+            }}
+            disabled={savingBank}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+          >
+            {savingBank && <Loader2 size={13} className="animate-spin" />}
+            {savedFlag === "bank" ? <Check size={13} /> : null}
+            Simpan
+          </button>
+        </SettingsCard>
+
+        <SettingsCard title="Payment Gateway (Midtrans)">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Metode Pembayaran</label>
+            <select
+              value={form.paymentGateway}
+              onChange={(e) =>
+                setForm({ ...form, paymentGateway: e.target.value as "manual" | "midtrans" })
+              }
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+            >
+              <option value="manual">Manual (simulasi / transfer manual)</option>
+              <option value="midtrans">Midtrans (otomatis, auto-approve)</option>
+            </select>
+          </div>
+          <Field
+            label="Midtrans Client Key"
+            value={form.midtransClientKey}
+            onChange={(v) => setForm({ ...form, midtransClientKey: v })}
+          />
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={form.midtransIsProduction}
+              onChange={(e) => setForm({ ...form, midtransIsProduction: e.target.checked })}
+            />
+            Mode Production (nonaktifkan untuk pakai Sandbox/testing)
+          </label>
+          <button
+            onClick={async () => {
+              setSavingGateway(true);
+              await onSaveSettings(form);
+              setSavingGateway(false);
+              flashSaved("gateway");
+            }}
+            disabled={savingGateway}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+          >
+            {savingGateway && <Loader2 size={13} className="animate-spin" />}
+            {savedFlag === "gateway" ? <Check size={13} /> : null}
+            Simpan
+          </button>
+        </SettingsCard>
+
+        <SettingsCard title="Midtrans Server Key (Rahasia)">
+          <div
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${
+              secretConfigured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            <ShieldCheck size={14} />
+            {secretConfigured ? "Server Key sudah diatur" : "Server Key belum diatur"}
+          </div>
+          <p className="text-xs text-slate-500">
+            Server Key tidak pernah ditampilkan kembali setelah disimpan — hanya bisa diganti,
+            tersimpan aman di server (Netlify Function), tidak bisa diakses dari browser.
+          </p>
+          <Field
+            label="Server Key baru"
+            type="password"
+            value={serverKeyInput}
+            onChange={setServerKeyInput}
+          />
+          {keyError && <p className="text-xs text-red-600">{keyError}</p>}
+          <button
+            onClick={async () => {
+              if (!serverKeyInput.trim()) {
+                setKeyError("Server Key tidak boleh kosong.");
+                return;
+              }
+              setKeyError(null);
+              setSavingKey(true);
+              try {
+                await onSaveServerKey(serverKeyInput.trim());
+                setServerKeyInput("");
+                flashSaved("key");
+              } catch (err) {
+                setKeyError(err instanceof Error ? err.message : "Gagal menyimpan.");
+              } finally {
+                setSavingKey(false);
+              }
+            }}
+            disabled={savingKey}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+          >
+            {savingKey && <Loader2 size={13} className="animate-spin" />}
+            {savedFlag === "key" ? <Check size={13} /> : null}
+            Simpan Server Key
+          </button>
+        </SettingsCard>
+      </div>
     </div>
   );
 }

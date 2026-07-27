@@ -192,6 +192,32 @@ create table if not exists public.reviews (
   created_at timestamptz not null default now()
 );
 
+-- ----------------------------------------------------------------------------
+-- 5. SITE SETTINGS (public config: contact info, bank display, gateway toggle)
+-- ----------------------------------------------------------------------------
+create table if not exists public.site_settings (
+  id int primary key default 1,
+  contact_email text not null default 'halo@pulih.id',
+  contact_phone text not null default '0800-1-PULIH',
+  about_text text not null default 'Platform konseling psikologi online tepercaya untuk kesehatan mentalmu.',
+  bank_name text,
+  bank_account_number text,
+  bank_account_holder text,
+  payment_gateway text not null default 'manual' check (payment_gateway in ('manual', 'midtrans')),
+  midtrans_client_key text,
+  midtrans_is_production boolean not null default false,
+  constraint site_settings_single_row check (id = 1)
+);
+
+-- Server-only secret storage. Deliberately has NO select/insert/update policies for
+-- anon or authenticated roles below — only the service_role key (used exclusively
+-- inside Netlify Functions, never shipped to the browser) can read or write this.
+create table if not exists public.payment_secrets (
+  id int primary key default 1,
+  midtrans_server_key text,
+  constraint payment_secrets_single_row check (id = 1)
+);
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -208,6 +234,10 @@ alter table public.user_subscriptions enable row level security;
 alter table public.sessions enable row level security;
 alter table public.medical_records enable row level security;
 alter table public.reviews enable row level security;
+alter table public.site_settings enable row level security;
+-- payment_secrets: RLS enabled, no policies added anywhere in this file on purpose.
+-- That means anon/authenticated get zero access; only service_role (Netlify Functions) can touch it.
+alter table public.payment_secrets enable row level security;
 
 -- Public catalog data: anyone (incl. anonymous landing-page visitors) can read.
 drop policy if exists "public read profiles" on public.profiles;
@@ -268,6 +298,12 @@ drop policy if exists "admin updates events" on public.events;
 create policy "admin updates events" on public.events for update using (public.is_admin());
 drop policy if exists "admin deletes events" on public.events;
 create policy "admin deletes events" on public.events for delete using (public.is_admin());
+
+-- Site settings: public read (footer/contact info shown to everyone), admin write.
+drop policy if exists "public read site_settings" on public.site_settings;
+create policy "public read site_settings" on public.site_settings for select using (true);
+drop policy if exists "admin updates site_settings" on public.site_settings;
+create policy "admin updates site_settings" on public.site_settings for update using (public.is_admin());
 
 -- Event registrations: a patient can register themselves / see their own.
 drop policy if exists "patient manages own registration" on public.event_registrations;
@@ -346,6 +382,32 @@ insert into public.events (title, event_type, speaker_name, event_date, quota) v
   ('Self Love Journey: Support Group', 'Support Group', 'Eka Putri, M.Psi.', '2026-08-12 16:00:00+07', 15),
   ('Parenting untuk Generasi Digital', 'Webinar', 'Fajar Nugraha, M.Psi.', '2026-08-20 19:30:00+07', 60)
 on conflict do nothing;
+
+insert into public.site_settings (id) values (1) on conflict (id) do nothing;
+insert into public.payment_secrets (id) values (1) on conflict (id) do nothing;
+
+-- ============================================================================
+-- STORAGE — bucket for admin-uploaded banner images
+-- ============================================================================
+insert into storage.buckets (id, name, public)
+values ('banners', 'banners', true)
+on conflict (id) do nothing;
+
+drop policy if exists "public read banner images" on storage.objects;
+create policy "public read banner images" on storage.objects
+  for select using (bucket_id = 'banners');
+
+drop policy if exists "admin upload banner images" on storage.objects;
+create policy "admin upload banner images" on storage.objects
+  for insert with check (bucket_id = 'banners' and public.is_admin());
+
+drop policy if exists "admin update banner images" on storage.objects;
+create policy "admin update banner images" on storage.objects
+  for update using (bucket_id = 'banners' and public.is_admin());
+
+drop policy if exists "admin delete banner images" on storage.objects;
+create policy "admin delete banner images" on storage.objects
+  for delete using (bucket_id = 'banners' and public.is_admin());
 
 -- Note: demo psychologist accounts (with real auth.users rows + login access) are
 -- NOT seeded here because Supabase Auth users must be created via the Auth API,
