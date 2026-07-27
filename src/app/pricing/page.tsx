@@ -351,9 +351,11 @@ export default function PricingPage() {
                       {processing ? "Memproses pembayaran..." : "Bayar Sekarang"}
                     </button>
                     <p className="mt-3 text-center text-[11px] text-slate-400">
-                      {profile
-                        ? "Simulasi metode pembayaran, tapi transaksi & langgananmu tersimpan sungguhan."
-                        : "Kamu akan diminta masuk terlebih dahulu sebelum membayar."}
+                      {!profile
+                        ? "Kamu akan diminta masuk terlebih dahulu sebelum membayar."
+                        : useMidtrans
+                          ? "Pembayaran diproses aman lewat Midtrans — transaksi & langgananmu langsung tersimpan."
+                          : "Simulasi metode pembayaran, tapi transaksi & langgananmu tersimpan sungguhan."}
                     </p>
                   </div>
                 </div>

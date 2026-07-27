@@ -444,12 +444,13 @@ export type AdminUserView = {
   rawRole: "patient" | "psychologist" | "admin";
   status: string;
   joined: string;
+  isOnline: boolean | null;
 };
 
 export async function fetchAdminUsers(): Promise<AdminUserView[]> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("*, psychologist_profiles(verification_status)")
+    .select("*, psychologist_profiles(verification_status, is_online)")
     .order("created_at", { ascending: false });
   if (error || !data) return [];
   return (data as unknown as Array<{
@@ -458,7 +459,7 @@ export async function fetchAdminUsers(): Promise<AdminUserView[]> {
     email: string | null;
     role: "patient" | "psychologist" | "admin";
     created_at: string;
-    psychologist_profiles: { verification_status: string } | null;
+    psychologist_profiles: { verification_status: string; is_online: boolean } | null;
   }>).map((u) => ({
     id: u.id,
     name: u.full_name ?? "Pengguna",
@@ -476,6 +477,7 @@ export async function fetchAdminUsers(): Promise<AdminUserView[]> {
     joined: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(
       new Date(u.created_at)
     ),
+    isOnline: u.role === "psychologist" ? (u.psychologist_profiles?.is_online ?? false) : null,
   }));
 }
 

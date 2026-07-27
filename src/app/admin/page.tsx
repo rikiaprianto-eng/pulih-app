@@ -47,6 +47,7 @@ import {
   deleteEvent,
   updateUserRole,
   createUserAsAdmin,
+  setOnlineStatus,
   AdminUserView,
   PendingPaymentView,
   AdminStats,
@@ -102,6 +103,7 @@ export default function AdminPage() {
   const [addingEvent, setAddingEvent] = useState(false);
   const [addingBanner, setAddingBanner] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
+  const [updatingOnlineId, setUpdatingOnlineId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [secretConfigured, setSecretConfigured] = useState(false);
 
@@ -204,6 +206,13 @@ export default function AdminPage() {
     await updateUserRole(userId, role);
     await reload();
     setUpdatingRoleId(null);
+  }
+
+  async function handleToggleOnline(userId: string, nextOnline: boolean) {
+    setUpdatingOnlineId(userId);
+    await setOnlineStatus(userId, nextOnline);
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, isOnline: nextOnline } : u)));
+    setUpdatingOnlineId(null);
   }
 
   async function handleCreateUser(fields: {
@@ -319,13 +328,14 @@ export default function AdminPage() {
 
                   <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
                     <div className="overflow-x-auto">
-                    <table className="w-full min-w-[560px] text-left text-sm">
+                    <table className="w-full min-w-[680px] text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-5 py-3 font-medium">Nama</th>
                           <th className="px-5 py-3 font-medium">Role</th>
                           <th className="px-5 py-3 font-medium">Bergabung</th>
                           <th className="px-5 py-3 font-medium">Status</th>
+                          <th className="px-5 py-3 font-medium">Online</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -366,11 +376,33 @@ export default function AdminPage() {
                                 {u.status}
                               </span>
                             </td>
+                            <td className="px-5 py-3.5">
+                              {u.rawRole === "psychologist" ? (
+                                <button
+                                  onClick={() => handleToggleOnline(u.id, !u.isOnline)}
+                                  disabled={updatingOnlineId === u.id}
+                                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+                                    u.isOnline
+                                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                  }`}
+                                >
+                                  {updatingOnlineId === u.id ? (
+                                    <Loader2 size={11} className="animate-spin" />
+                                  ) : (
+                                    <span className={`h-1.5 w-1.5 rounded-full ${u.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                  )}
+                                  {u.isOnline ? "Online" : "Offline"}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                         {users.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">
+                            <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
                               Belum ada pengguna.
                             </td>
                           </tr>
@@ -865,11 +897,13 @@ function AddBannerModal({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError(null);
+    setFormError(null);
     setUploading(true);
     try {
       const url = await uploadBannerImage(file);
@@ -888,13 +922,28 @@ function AddBannerModal({
       onCancel={onCancel}
       saving={saving}
       onSubmit={async () => {
-        if (!form.title.trim() || !form.image) return;
+        if (!form.title.trim()) {
+          setFormError("Judul banner wajib diisi.");
+          return;
+        }
+        if (!form.image) {
+          setFormError("Unggah gambar banner terlebih dahulu.");
+          return;
+        }
+        setFormError(null);
         setSaving(true);
         await onSave(form);
         setSaving(false);
       }}
     >
-      <Field label="Judul" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+      <Field
+        label="Judul"
+        value={form.title}
+        onChange={(v) => {
+          setForm({ ...form, title: v });
+          setFormError(null);
+        }}
+      />
       <Field
         label="Subjudul"
         value={form.subtitle}
@@ -922,6 +971,7 @@ function AddBannerModal({
         )}
         {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
       </div>
+      {formError && <p className="text-xs font-medium text-red-600">{formError}</p>}
     </ModalShell>
   );
 }
