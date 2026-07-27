@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
-import { Star, ShieldCheck, HeartHandshake } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Star, ShieldCheck, HeartHandshake } from "lucide-react";
 import Logo from "./Logo";
 
 export default function AuthShell({
@@ -14,7 +15,15 @@ export default function AuthShell({
   return (
     <div className="flex min-h-screen">
       <div className="flex w-full flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-16">
-        <Logo />
+        <div className="flex items-center justify-between">
+          <Logo />
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <ArrowLeft size={16} /> Kembali
+          </Link>
+        </div>
         <div className="mx-auto w-full max-w-sm flex-1 pt-10">
           <h1 className="font-heading text-2xl font-bold text-slate-900">{title}</h1>
           <p className="mt-1.5 text-sm text-slate-500">{subtitle}</p>
