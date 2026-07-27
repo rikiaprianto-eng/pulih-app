@@ -672,6 +672,7 @@ export async function createUserAsAdmin(
 // ---------------------------------------------------------------------------
 
 export type SiteSettings = {
+  logoUrl: string;
   contactEmail: string;
   contactPhone: string;
   aboutText: string;
@@ -684,6 +685,7 @@ export type SiteSettings = {
 };
 
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  logoUrl: "",
   contactEmail: "halo@pulih.id",
   contactPhone: "0800-1-PULIH",
   aboutText: "Platform konseling psikologi online tepercaya untuk kesehatan mentalmu.",
@@ -699,6 +701,7 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
   const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
   if (error || !data) return DEFAULT_SITE_SETTINGS;
   return {
+    logoUrl: data.logo_url ?? "",
     contactEmail: data.contact_email ?? DEFAULT_SITE_SETTINGS.contactEmail,
     contactPhone: data.contact_phone ?? DEFAULT_SITE_SETTINGS.contactPhone,
     aboutText: data.about_text ?? DEFAULT_SITE_SETTINGS.aboutText,
@@ -715,6 +718,7 @@ export async function updateSiteSettings(fields: SiteSettings) {
   await supabase
     .from("site_settings")
     .update({
+      logo_url: fields.logoUrl || null,
       contact_email: fields.contactEmail,
       contact_phone: fields.contactPhone,
       about_text: fields.aboutText,

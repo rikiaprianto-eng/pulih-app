@@ -221,6 +221,7 @@ create table if not exists public.reviews (
 -- ----------------------------------------------------------------------------
 create table if not exists public.site_settings (
   id int primary key default 1,
+  logo_url text,
   contact_email text not null default 'halo@pulih.id',
   contact_phone text not null default '0800-1-PULIH',
   about_text text not null default 'Platform konseling psikologi online tepercaya untuk kesehatan mentalmu.',
@@ -232,6 +233,10 @@ create table if not exists public.site_settings (
   midtrans_is_production boolean not null default false,
   constraint site_settings_single_row check (id = 1)
 );
+
+-- In case site_settings already existed from an earlier run of this file (before
+-- logo_url was added) — "create table if not exists" above wouldn't add the column.
+alter table public.site_settings add column if not exists logo_url text;
 
 -- Server-only secret storage. Deliberately has NO select/insert/update policies for
 -- anon or authenticated roles below — only the service_role key (used exclusively

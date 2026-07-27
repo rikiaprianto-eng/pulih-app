@@ -1168,6 +1168,9 @@ function SettingsTab({
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
   const [savingGateway, setSavingGateway] = useState(false);
+  const [savingLogo, setSavingLogo] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [savedFlag, setSavedFlag] = useState<string | null>(null);
   const [serverKeyInput, setServerKeyInput] = useState("");
   const [savingKey, setSavingKey] = useState(false);
@@ -1178,6 +1181,26 @@ function SettingsTab({
     setTimeout(() => setSavedFlag(null), 2000);
   }
 
+  async function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError(null);
+    setUploadingLogo(true);
+    try {
+      const url = await uploadBannerImage(file);
+      const next = { ...form, logoUrl: url };
+      setForm(next);
+      setSavingLogo(true);
+      await onSaveSettings(next);
+      setSavingLogo(false);
+      flashSaved("logo");
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Gagal mengunggah logo.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   return (
     <div>
       <h1 className="font-heading text-xl font-bold text-slate-900">Pengaturan</h1>
@@ -1186,6 +1209,42 @@ function SettingsTab({
       </p>
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SettingsCard title="Logo">
+          <div className="flex items-center gap-4">
+            {form.logoUrl ? (
+              <img src={form.logoUrl} alt="Logo" className="h-14 w-14 rounded-xl object-cover" />
+            ) : (
+              <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-teal-500 text-xs font-semibold text-white">
+                Pulih
+              </span>
+            )}
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
+              {uploadingLogo || savingLogo ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Upload size={14} />
+              )}
+              {uploadingLogo ? "Mengunggah..." : savingLogo ? "Menyimpan..." : "Unggah logo dari PC"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoFileChange}
+                className="hidden"
+                disabled={uploadingLogo || savingLogo}
+              />
+            </label>
+          </div>
+          {savedFlag === "logo" && (
+            <p className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+              <Check size={13} /> Logo tersimpan &mdash; tampil di seluruh halaman.
+            </p>
+          )}
+          {logoError && <p className="text-xs text-red-600">{logoError}</p>}
+          <p className="text-[11px] text-slate-400">
+            Kosongkan (jangan unggah apa pun) untuk memakai ikon bawaan Pulih.
+          </p>
+        </SettingsCard>
+
         <SettingsCard title="Informasi Umum">
           <Field
             label="Email Kontak"
