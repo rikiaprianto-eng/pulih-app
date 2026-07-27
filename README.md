@@ -1,14 +1,21 @@
 # Pulih — Web App
 
 Platform konseling psikologi online. Dibangun dengan Next.js (App Router, static export) +
-TypeScript + Tailwind CSS, dan sudah dibungkus dengan [Capacitor](https://capacitorjs.com) supaya
-bisa langsung dikompilasi menjadi aplikasi **Android (.apk)** dan **iOS**.
+TypeScript + Tailwind CSS, terhubung ke **Supabase** (auth + database asli), siap deploy ke
+**Netlify**, dan sudah dibungkus dengan [Capacitor](https://capacitorjs.com) supaya bisa langsung
+dikompilasi menjadi aplikasi **Android (.apk)** dan **iOS**.
 
-Seluruh data (banner, psikolog, paket harga, event, riwayat, dsb) di aplikasi ini adalah **dummy/mock**
-yang ada di [`src/lib/data.ts`](./src/lib/data.ts) — ganti dengan pemanggilan API asli saat backend
-sudah siap.
+Autentikasi (signup/login), data psikolog, paket harga, banner, event, transaksi, langganan, sesi,
+dan rekam medis semuanya sudah membaca/menulis ke database Supabase asli — lihat
+[`supabase/README.md`](./supabase/README.md) untuk setup database, dan [`src/lib/queries.ts`](./src/lib/queries.ts)
+untuk semua query yang dipakai. Hanya konten marketing statis (fitur, testimoni) yang masih ada di
+[`src/lib/data.ts`](./src/lib/data.ts).
 
 ## Menjalankan secara lokal
+
+1. Setup database Supabase — ikuti [`supabase/README.md`](./supabase/README.md).
+2. Salin `.env.local.example` menjadi `.env.local`, isi dengan Project URL & anon key dari Supabase.
+3. Install & jalankan:
 
 ```bash
 npm install
@@ -16,6 +23,24 @@ npm run dev
 ```
 
 Buka [http://localhost:3010](http://localhost:3010).
+
+## Deploy ke Netlify
+
+Repo ini sudah punya `netlify.toml` (build command `npm run build`, publish dir `out`).
+
+1. Push repo ini ke GitHub:
+   ```bash
+   git remote add origin <url-repo-github-kamu>
+   git push -u origin master
+   ```
+2. Di [app.netlify.com](https://app.netlify.com) → **Add new site → Import an existing project** →
+   pilih repo GitHub ini. Build settings akan terbaca otomatis dari `netlify.toml`.
+3. Sebelum deploy pertama, buka **Site configuration → Environment variables**, tambahkan:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+   (nilai yang sama seperti di `.env.local` kamu).
+4. **Deploy site**. Setiap `git push` berikutnya akan otomatis rebuild & redeploy.
 
 ## Peta halaman
 
