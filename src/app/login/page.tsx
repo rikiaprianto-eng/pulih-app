@@ -1,18 +1,34 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Loader2 } from "lucide-react";
 import AuthShell from "@/components/AuthShell";
-import { signInWithEmail, signInWithGoogle, fetchProfile, roleHome } from "@/lib/auth";
+import {
+  signInWithEmail,
+  signInWithGoogle,
+  fetchProfile,
+  roleHome,
+  consumeRedirectAfterLogin,
+} from "@/lib/auth";
+import { useAuth } from "@/lib/useAuth";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { profile: existingProfile, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Already logged in (e.g. navigated back here by mistake) — bounce straight to
+  // wherever they were headed instead of showing the login form again.
+  useEffect(() => {
+    if (!authLoading && existingProfile) {
+      router.replace(consumeRedirectAfterLogin() ?? roleHome(existingProfile.role));
+    }
+  }, [authLoading, existingProfile, router]);
 
   async function attemptLogin(e: FormEvent) {
     e.preventDefault();
@@ -21,7 +37,8 @@ export default function LoginPage() {
     try {
       const { user } = await signInWithEmail(email.trim(), password);
       const profile = user ? await fetchProfile(user.id) : null;
-      router.push(profile ? roleHome(profile.role) : "/dashboard");
+      const destination = consumeRedirectAfterLogin() ?? (profile ? roleHome(profile.role) : "/dashboard");
+      router.push(destination);
     } catch {
       setError(
         "Email atau kata sandi salah, atau akun ini belum terdaftar. Coba lagi atau buat akun baru."

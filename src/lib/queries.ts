@@ -603,6 +603,10 @@ export async function updateBanner(id: string, fields: Partial<Banner>) {
     .eq("id", id);
 }
 
+export async function deleteBanner(id: string) {
+  await supabase.from("banners").delete().eq("id", id);
+}
+
 export async function createEvent(fields: {
   title: string;
   type: "Webinar" | "Support Group";

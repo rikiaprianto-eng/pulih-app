@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
-import { applyRoleAfterOAuth, consumePendingRole, fetchProfile, roleHome } from "@/lib/auth";
+import {
+  applyRoleAfterOAuth,
+  consumePendingRole,
+  consumeRedirectAfterLogin,
+  fetchProfile,
+  roleHome,
+} from "@/lib/auth";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -44,7 +50,7 @@ export default function AuthCallbackPage() {
       }
       const profile = await fetchProfile(userId);
       if (cancelled) return;
-      router.replace(profile ? roleHome(profile.role) : "/dashboard");
+      router.replace(consumeRedirectAfterLogin() ?? (profile ? roleHome(profile.role) : "/dashboard"));
     }
 
     finish();

@@ -113,7 +113,8 @@ export default function LanggananPage() {
               </p>
             ) : (
               <div className="mt-3 overflow-hidden rounded-2xl border border-slate-100 bg-white">
-                <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-5 py-3 font-medium">Tanggal</th>
@@ -139,6 +140,7 @@ export default function LanggananPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </>

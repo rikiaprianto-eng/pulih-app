@@ -17,8 +17,11 @@ import { paymentMethods, Package } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
 import { useAuth } from "@/lib/useAuth";
 import { fetchPackages, createCheckout, fetchSiteSettings, createMidtransTransaction, SiteSettings } from "@/lib/queries";
+import { setRedirectAfterLogin } from "@/lib/auth";
 
 type Step = "package" | "payment" | "success";
+
+const PENDING_PACKAGE_KEY = "pulih_pending_package_id";
 
 declare global {
   interface Window {
@@ -58,6 +61,21 @@ export default function PricingPage() {
     });
   }, []);
 
+  // If the user got sent to /login mid-checkout (see pay() below), resume exactly
+  // where they left off once they're back here and authenticated, instead of
+  // stranding them on the package list.
+  useEffect(() => {
+    if (loadingPackages || !profile) return;
+    const pendingId = window.sessionStorage.getItem(PENDING_PACKAGE_KEY);
+    if (!pendingId) return;
+    window.sessionStorage.removeItem(PENDING_PACKAGE_KEY);
+    const pkg = packages.find((p) => p.id === pendingId);
+    if (pkg) {
+      setSelectedPkg(pkg);
+      setStep("payment");
+    }
+  }, [loadingPackages, profile, packages]);
+
   useEffect(() => {
     if (!settings?.midtransClientKey || settings.paymentGateway !== "midtrans") return;
     if (document.getElementById("midtrans-snap-script")) return;
@@ -78,6 +96,8 @@ export default function PricingPage() {
   async function pay() {
     if (!selectedPkg) return;
     if (!profile) {
+      window.sessionStorage.setItem(PENDING_PACKAGE_KEY, selectedPkg.id);
+      setRedirectAfterLogin("/pricing");
       router.push("/login");
       return;
     }

@@ -41,6 +41,7 @@ import {
   createPackage,
   deletePackage,
   updateBanner,
+  deleteBanner,
   createEvent,
   deleteEvent,
   updateUserRole,
@@ -161,6 +162,12 @@ export default function AdminPage() {
     setEditingBanner(null);
   }
 
+  async function handleDeleteBanner(id: string) {
+    if (!confirm("Hapus banner ini?")) return;
+    await deleteBanner(id);
+    setBanners((prev) => prev.filter((b) => b.id !== id));
+  }
+
   async function handleCreateEvent(fields: {
     title: string;
     type: "Webinar" | "Support Group";
@@ -179,7 +186,12 @@ export default function AdminPage() {
     setEvents((prev) => prev.filter((e) => e.id !== id));
   }
 
-  async function handleRoleChange(userId: string, role: "patient" | "psychologist" | "admin") {
+  async function handleRoleChange(
+    userId: string,
+    role: "patient" | "psychologist" | "admin",
+    userName: string
+  ) {
+    if (!confirm(`Ubah role ${userName} menjadi "${role}"?`)) return;
     setUpdatingRoleId(userId);
     await updateUserRole(userId, role);
     await reload();
@@ -298,7 +310,8 @@ export default function AdminPage() {
                   </div>
 
                   <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
-                    <table className="w-full text-left text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-5 py-3 font-medium">Nama</th>
@@ -322,7 +335,8 @@ export default function AdminPage() {
                                   onChange={(e) =>
                                     handleRoleChange(
                                       u.id,
-                                      e.target.value as "patient" | "psychologist" | "admin"
+                                      e.target.value as "patient" | "psychologist" | "admin",
+                                      u.name
                                     )
                                   }
                                   className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-teal-500 disabled:opacity-50"
@@ -355,6 +369,7 @@ export default function AdminPage() {
                         )}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -421,12 +436,20 @@ export default function AdminPage() {
                           <p className="truncate text-sm font-semibold text-slate-800">{b.title}</p>
                           <p className="truncate text-xs text-slate-500">{b.href}</p>
                         </div>
-                        <button
-                          onClick={() => setEditingBanner(b)}
-                          className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                        >
-                          <Pencil size={13} /> Edit
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setEditingBanner(b)}
+                            className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            <Pencil size={13} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBanner(b.id)}
+                            className="flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={13} /> Hapus
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {banners.length === 0 && (
@@ -500,7 +523,8 @@ export default function AdminPage() {
                   </div>
 
                   <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
-                    <table className="w-full text-left text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="w-full min-w-[620px] text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-5 py-3 font-medium">Paket</th>
@@ -546,6 +570,7 @@ export default function AdminPage() {
                         )}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               )}

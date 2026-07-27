@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Menu, X, LogOut } from "lucide-react";
 import Logo from "./Logo";
+import { useAuth } from "@/lib/useAuth";
+import { signOut, roleHome } from "@/lib/auth";
 
 const navLinks = [
   { label: "Fitur", href: "/#fitur" },
@@ -13,6 +16,14 @@ const navLinks = [
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const { profile, loading } = useAuth();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await signOut();
+    setOpen(false);
+    router.push("/");
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 backdrop-blur">
@@ -32,18 +43,37 @@ export default function Navbar() {
         </div>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Link
-            href="/login"
-            className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            Masuk
-          </Link>
-          <Link
-            href="/signup"
-            className="rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-teal-200 transition hover:brightness-105"
-          >
-            Daftar
-          </Link>
+          {loading ? null : profile ? (
+            <>
+              <Link
+                href={roleHome(profile.role)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Dashboard
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-teal-200 transition hover:brightness-105"
+              >
+                <LogOut size={14} /> Keluar
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Masuk
+              </Link>
+              <Link
+                href="/signup"
+                className="rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-teal-200 transition hover:brightness-105"
+              >
+                Daftar
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -70,20 +100,40 @@ export default function Navbar() {
               </Link>
             ))}
             <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3">
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="rounded-full border border-slate-200 px-4 py-2 text-center text-sm font-semibold text-slate-700"
-              >
-                Masuk
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setOpen(false)}
-                className="rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-center text-sm font-semibold text-white"
-              >
-                Daftar
-              </Link>
+              {profile ? (
+                <>
+                  <Link
+                    href={roleHome(profile.role)}
+                    onClick={() => setOpen(false)}
+                    className="rounded-full border border-slate-200 px-4 py-2 text-center text-sm font-semibold text-slate-700"
+                  >
+                    Dashboard
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-center text-sm font-semibold text-white"
+                  >
+                    <LogOut size={14} /> Keluar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full border border-slate-200 px-4 py-2 text-center text-sm font-semibold text-slate-700"
+                  >
+                    Masuk
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-center text-sm font-semibold text-white"
+                  >
+                    Daftar
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

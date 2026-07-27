@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,7 +15,15 @@ import {
   MailCheck,
 } from "lucide-react";
 import AuthShell from "@/components/AuthShell";
-import { Role, signUpWithEmail, signInWithGoogle, setPendingRole, roleHome } from "@/lib/auth";
+import {
+  Role,
+  signUpWithEmail,
+  signInWithGoogle,
+  setPendingRole,
+  roleHome,
+  consumeRedirectAfterLogin,
+} from "@/lib/auth";
+import { useAuth } from "@/lib/useAuth";
 
 const roleOptions: {
   role: Role;
@@ -39,6 +47,7 @@ const roleOptions: {
 
 export default function SignupPage() {
   const router = useRouter();
+  const { profile: existingProfile, loading: authLoading } = useAuth();
   const [role, setRole] = useState<Role | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -46,6 +55,12 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && existingProfile) {
+      router.replace(consumeRedirectAfterLogin() ?? roleHome(existingProfile.role));
+    }
+  }, [authLoading, existingProfile, router]);
 
   async function handleGoogleSignup() {
     if (!role) return;
@@ -66,7 +81,7 @@ export default function SignupPage() {
     try {
       const { user, session } = await signUpWithEmail(email.trim(), password, name.trim(), role);
       if (session && user) {
-        router.push(roleHome(role));
+        router.push(consumeRedirectAfterLogin() ?? roleHome(role));
       } else {
         setNeedsConfirmation(true);
       }

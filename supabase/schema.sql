@@ -62,6 +62,30 @@ as $$
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
 $$;
 
+-- Security: the "update own profile" policy below lets a user update their own row
+-- (needed for editing their name/phone/avatar) — but without this trigger, that would
+-- also let them silently promote themselves to admin by PATCHing their own `role`
+-- column directly via the REST API. This trigger reverts any change to `role` unless
+-- the actor performing the update is already an admin.
+create or replace function public.prevent_self_role_escalation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.role is distinct from old.role and not public.is_admin() then
+    new.role := old.role;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_role_column on public.profiles;
+create trigger protect_role_column
+  before update on public.profiles
+  for each row execute function public.prevent_self_role_escalation();
+
 -- ----------------------------------------------------------------------------
 -- 2. PSYCHOLOGIST PROFILES + SPECIALIZATIONS
 -- ----------------------------------------------------------------------------
@@ -365,23 +389,27 @@ insert into public.specializations (name) values
   ('Remaja'), ('Trauma'), ('Stres Kerja'), ('Depresi'), ('Anak')
 on conflict (name) do nothing;
 
-insert into public.packages (name, description, duration_minutes, session_quota, price, original_price, badge, sort_order) values
-  ('Sesi 30 Menit', 'Cocok untuk konsultasi ringan atau follow-up singkat.', 30, 1, 99000, null, null, 1),
-  ('Sesi 60 Menit', 'Sesi konseling mendalam satu-lawan-satu dengan psikolog.', 60, 1, 175000, null, 'Paling Populer', 2),
-  ('Bundling 1 Bulan', '4x sesi 60 menit dalam satu bulan, jadwalkan sesuai kebutuhanmu.', 60, 4, 599000, 700000, 'Hemat 30%', 3)
-on conflict do nothing;
+-- Fixed ids below (rather than the table's gen_random_uuid() default) so re-running
+-- this file is truly idempotent: "on conflict (id) do nothing" only works when the
+-- conflict target is deterministic across runs. Without this, every re-run silently
+-- inserted a fresh duplicate row (this bit us once already — see git history).
+insert into public.packages (id, name, description, duration_minutes, session_quota, price, original_price, badge, sort_order) values
+  ('00000000-0000-4000-8000-000000000001', 'Sesi 30 Menit', 'Cocok untuk konsultasi ringan atau follow-up singkat.', 30, 1, 99000, null, null, 1),
+  ('00000000-0000-4000-8000-000000000002', 'Sesi 60 Menit', 'Sesi konseling mendalam satu-lawan-satu dengan psikolog.', 60, 1, 175000, null, 'Paling Populer', 2),
+  ('00000000-0000-4000-8000-000000000003', 'Bundling 1 Bulan', '4x sesi 60 menit dalam satu bulan, jadwalkan sesuai kebutuhanmu.', 60, 4, 599000, 700000, 'Hemat 30%', 3)
+on conflict (id) do nothing;
 
-insert into public.banners (title, subtitle, cta_label, href, image_url, sort_order) values
-  ('Konseling Online Kapan Saja', 'Terhubung dengan psikolog berlisensi dalam hitungan menit, di mana pun kamu berada.', 'Mulai Sekarang', '/signup', 'https://picsum.photos/seed/pulih-banner-1/1200/500', 1),
-  ('Webinar: Mengelola Kecemasan di Tempat Kerja', 'Gratis untuk pengguna terdaftar — 5 Agustus 2026, pukul 19.00 WIB.', 'Daftar Event', '#events', 'https://picsum.photos/seed/pulih-banner-2/1200/500', 2),
-  ('Paket Bundling 1 Bulan Hemat 30%', '4x sesi konseling 60 menit dengan psikolog pilihanmu, mulai dari Rp599.000.', 'Lihat Paket', '/pricing', 'https://picsum.photos/seed/pulih-banner-3/1200/500', 3)
-on conflict do nothing;
+insert into public.banners (id, title, subtitle, cta_label, href, image_url, sort_order) values
+  ('00000000-0000-4000-8000-000000000101', 'Konseling Online Kapan Saja', 'Terhubung dengan psikolog berlisensi dalam hitungan menit, di mana pun kamu berada.', 'Mulai Sekarang', '/signup', 'https://picsum.photos/seed/pulih-banner-1/1200/500', 1),
+  ('00000000-0000-4000-8000-000000000102', 'Webinar: Mengelola Kecemasan di Tempat Kerja', 'Gratis untuk pengguna terdaftar — 5 Agustus 2026, pukul 19.00 WIB.', 'Daftar Event', '#events', 'https://picsum.photos/seed/pulih-banner-2/1200/500', 2),
+  ('00000000-0000-4000-8000-000000000103', 'Paket Bundling 1 Bulan Hemat 30%', '4x sesi konseling 60 menit dengan psikolog pilihanmu, mulai dari Rp599.000.', 'Lihat Paket', '/pricing', 'https://picsum.photos/seed/pulih-banner-3/1200/500', 3)
+on conflict (id) do nothing;
 
-insert into public.events (title, event_type, speaker_name, event_date, quota) values
-  ('Mengelola Kecemasan di Tempat Kerja', 'Webinar', 'Dedi Kurniawan, M.Psi.', '2026-08-05 19:00:00+07', 42),
-  ('Self Love Journey: Support Group', 'Support Group', 'Eka Putri, M.Psi.', '2026-08-12 16:00:00+07', 15),
-  ('Parenting untuk Generasi Digital', 'Webinar', 'Fajar Nugraha, M.Psi.', '2026-08-20 19:30:00+07', 60)
-on conflict do nothing;
+insert into public.events (id, title, event_type, speaker_name, event_date, quota) values
+  ('00000000-0000-4000-8000-000000000201', 'Mengelola Kecemasan di Tempat Kerja', 'Webinar', 'Dedi Kurniawan, M.Psi.', '2026-08-05 19:00:00+07', 42),
+  ('00000000-0000-4000-8000-000000000202', 'Self Love Journey: Support Group', 'Support Group', 'Eka Putri, M.Psi.', '2026-08-12 16:00:00+07', 15),
+  ('00000000-0000-4000-8000-000000000203', 'Parenting untuk Generasi Digital', 'Webinar', 'Fajar Nugraha, M.Psi.', '2026-08-20 19:30:00+07', 60)
+on conflict (id) do nothing;
 
 insert into public.site_settings (id) values (1) on conflict (id) do nothing;
 insert into public.payment_secrets (id) values (1) on conflict (id) do nothing;
