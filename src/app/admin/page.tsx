@@ -42,6 +42,7 @@ import {
   deletePackage,
   updateBanner,
   deleteBanner,
+  createBanner,
   createEvent,
   deleteEvent,
   updateUserRole,
@@ -99,6 +100,7 @@ export default function AdminPage() {
   const [addingUser, setAddingUser] = useState(false);
   const [addingPackage, setAddingPackage] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
+  const [addingBanner, setAddingBanner] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [secretConfigured, setSecretConfigured] = useState(false);
@@ -166,6 +168,12 @@ export default function AdminPage() {
     if (!confirm("Hapus banner ini?")) return;
     await deleteBanner(id);
     setBanners((prev) => prev.filter((b) => b.id !== id));
+  }
+
+  async function handleCreateBanner(fields: Omit<Banner, "id" | "gradient">) {
+    await createBanner(fields);
+    setAddingBanner(false);
+    reload();
   }
 
   async function handleCreateEvent(fields: {
@@ -424,7 +432,15 @@ export default function AdminPage() {
                   <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Konten</h1>
                   <p className="mt-1 text-sm text-slate-500">Kelola banner Hero Section dan event pada halaman utama.</p>
 
-                  <h2 className="mt-6 font-heading text-sm font-semibold text-slate-900">Banner</h2>
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-heading text-sm font-semibold text-slate-900">Banner</h2>
+                    <button
+                      onClick={() => setAddingBanner(true)}
+                      className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white"
+                    >
+                      <Plus size={14} /> Tambah Banner
+                    </button>
+                  </div>
                   <div className="mt-3 space-y-3">
                     {banners.map((b) => (
                       <div
@@ -610,6 +626,9 @@ export default function AdminPage() {
       )}
       {addingEvent && (
         <AddEventModal onCancel={() => setAddingEvent(false)} onSave={handleCreateEvent} />
+      )}
+      {addingBanner && (
+        <AddBannerModal onCancel={() => setAddingBanner(false)} onSave={handleCreateBanner} />
       )}
     </div>
   );
@@ -829,6 +848,78 @@ function EditBannerModal({
           {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
           <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
         </label>
+        {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
+      </div>
+    </ModalShell>
+  );
+}
+
+function AddBannerModal({
+  onCancel,
+  onSave,
+}: {
+  onCancel: () => void;
+  onSave: (banner: Omit<Banner, "id" | "gradient">) => Promise<void>;
+}) {
+  const [form, setForm] = useState({ title: "", subtitle: "", href: "/", cta: "Selengkapnya", image: "" });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const url = await uploadBannerImage(file);
+      setForm((f) => ({ ...f, image: url }));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <ModalShell
+      title="Tambah Banner"
+      submitLabel="Tambahkan"
+      onCancel={onCancel}
+      saving={saving}
+      onSubmit={async () => {
+        if (!form.title.trim() || !form.image) return;
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      }}
+    >
+      <Field label="Judul" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+      <Field
+        label="Subjudul"
+        value={form.subtitle}
+        onChange={(v) => setForm({ ...form, subtitle: v })}
+      />
+      <Field
+        label="Label Tombol"
+        value={form.cta}
+        onChange={(v) => setForm({ ...form, cta: v })}
+      />
+      <Field label="Tautan" value={form.href} onChange={(v) => setForm({ ...form, href: v })} />
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Gambar Banner</label>
+        {form.image && (
+          <img src={form.image} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />
+        )}
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
+        </label>
+        {!form.image && (
+          <p className="mt-1 text-[11px] text-slate-400">Gambar wajib diunggah sebelum menyimpan.</p>
+        )}
         {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
       </div>
     </ModalShell>

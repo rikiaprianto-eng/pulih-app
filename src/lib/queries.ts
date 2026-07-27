@@ -607,6 +607,19 @@ export async function deleteBanner(id: string) {
   await supabase.from("banners").delete().eq("id", id);
 }
 
+export async function createBanner(fields: Omit<Banner, "id" | "gradient">) {
+  const { data: rows } = await supabase.from("banners").select("sort_order").order("sort_order", { ascending: false }).limit(1);
+  const nextSortOrder = (rows?.[0]?.sort_order ?? 0) + 1;
+  await supabase.from("banners").insert({
+    title: fields.title,
+    subtitle: fields.subtitle,
+    href: fields.href,
+    cta_label: fields.cta,
+    image_url: fields.image,
+    sort_order: nextSortOrder,
+  });
+}
+
 export async function createEvent(fields: {
   title: string;
   type: "Webinar" | "Support Group";
