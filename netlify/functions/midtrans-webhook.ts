@@ -19,20 +19,32 @@ function isValidSignature(body: MidtransNotification, serverKey: string): boolea
   return expected === body.signature_key;
 }
 
+// Midtrans's dashboard pings this URL (GET, and/or a POST with a placeholder payload)
+// when you save the "Payment Notification URL" setting, to confirm it's reachable. It
+// expects a 2xx response for that check to pass — so this handler always answers 200,
+// even when a real notification turns out to be incomplete or fails signature
+// verification. Those cases are logged and ignored internally rather than surfaced as
+// HTTP errors; only a verified, successful transaction actually updates the database.
 export const handler: Handler = async (event) => {
-  if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
+  if (event.httpMethod === "GET") {
+    return jsonResponse(200, { ok: true, note: "Midtrans webhook endpoint is reachable." });
+  }
+  if (event.httpMethod !== "POST") {
+    return jsonResponse(200, { ok: true, note: "ignored: unsupported method" });
+  }
   if (!hasServiceRoleKey()) {
-    return jsonResponse(500, { error: "SUPABASE_SERVICE_ROLE_KEY belum diset di Netlify." });
+    console.error("midtrans-webhook: SUPABASE_SERVICE_ROLE_KEY is not set");
+    return jsonResponse(200, { ok: true, note: "ignored: server not fully configured" });
   }
 
-  let body: MidtransNotification;
+  let body: Partial<MidtransNotification>;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return jsonResponse(400, { error: "Body tidak valid." });
+    return jsonResponse(200, { ok: true, note: "ignored: invalid JSON body" });
   }
-  if (!body.order_id || !body.signature_key) {
-    return jsonResponse(400, { error: "Payload notifikasi tidak lengkap." });
+  if (!body.order_id || !body.signature_key || !body.status_code || !body.gross_amount) {
+    return jsonResponse(200, { ok: true, note: "ignored: incomplete payload" });
   }
 
   const admin = getSupabaseAdmin();
@@ -42,26 +54,35 @@ export const handler: Handler = async (event) => {
     .select("midtrans_server_key")
     .eq("id", 1)
     .maybeSingle();
-  if (!secret?.midtrans_server_key || !isValidSignature(body, secret.midtrans_server_key)) {
-    return jsonResponse(403, { error: "Signature tidak valid." });
+  if (!secret?.midtrans_server_key || !isValidSignature(body as MidtransNotification, secret.midtrans_server_key)) {
+    console.warn("midtrans-webhook: signature mismatch for order", body.order_id);
+    return jsonResponse(200, { ok: true, note: "ignored: invalid signature" });
   }
+
+  const notif = body as MidtransNotification;
 
   const { data: tx } = await admin
     .from("transactions")
     .select("*, packages(name, session_quota)")
-    .eq("id", body.order_id)
+    .eq("id", notif.order_id)
     .maybeSingle();
-  if (!tx) return jsonResponse(404, { error: "Transaksi tidak ditemukan." });
+  if (!tx) {
+    return jsonResponse(200, { ok: true, note: "ignored: transaction not found" });
+  }
 
   const isSuccess =
-    body.transaction_status === "settlement" ||
-    (body.transaction_status === "capture" && body.fraud_status === "accept");
-  const isFailed = ["deny", "cancel", "expire", "failure"].includes(body.transaction_status);
+    notif.transaction_status === "settlement" ||
+    (notif.transaction_status === "capture" && notif.fraud_status === "accept");
+  const isFailed = ["deny", "cancel", "expire", "failure"].includes(notif.transaction_status);
 
   if (isSuccess && tx.status !== "paid") {
     await admin
       .from("transactions")
-      .update({ status: "paid", payment_method: body.payment_type ?? tx.payment_method, paid_at: new Date().toISOString() })
+      .update({
+        status: "paid",
+        payment_method: notif.payment_type ?? tx.payment_method,
+        paid_at: new Date().toISOString(),
+      })
       .eq("id", tx.id);
 
     const expiresAt = new Date();
