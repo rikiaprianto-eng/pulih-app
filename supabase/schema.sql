@@ -266,6 +266,8 @@ drop policy if exists "admin writes events" on public.events;
 create policy "admin writes events" on public.events for insert with check (public.is_admin());
 drop policy if exists "admin updates events" on public.events;
 create policy "admin updates events" on public.events for update using (public.is_admin());
+drop policy if exists "admin deletes events" on public.events;
+create policy "admin deletes events" on public.events for delete using (public.is_admin());
 
 -- Event registrations: a patient can register themselves / see their own.
 drop policy if exists "patient manages own registration" on public.event_registrations;

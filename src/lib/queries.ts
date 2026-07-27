@@ -441,6 +441,7 @@ export type AdminUserView = {
   name: string;
   email: string;
   role: "Pasien" | "Psikolog" | "Admin";
+  rawRole: "patient" | "psychologist" | "admin";
   status: string;
   joined: string;
 };
@@ -463,6 +464,7 @@ export async function fetchAdminUsers(): Promise<AdminUserView[]> {
     name: u.full_name ?? "Pengguna",
     email: u.email ?? "-",
     role: u.role === "psychologist" ? "Psikolog" : u.role === "admin" ? "Admin" : "Pasien",
+    rawRole: u.role,
     status:
       u.role === "psychologist"
         ? u.psychologist_profiles?.verification_status === "verified"
@@ -573,6 +575,22 @@ export async function updatePackage(id: string, fields: Partial<Package>) {
     .eq("id", id);
 }
 
+export async function createPackage(fields: Omit<Package, "id">) {
+  await supabase.from("packages").insert({
+    name: fields.name,
+    description: fields.description,
+    duration_minutes: fields.durationMinutes,
+    session_quota: fields.sessionQuota,
+    price: fields.price,
+    original_price: fields.originalPrice ?? null,
+    badge: fields.badge ?? null,
+  });
+}
+
+export async function deletePackage(id: string) {
+  await supabase.from("packages").delete().eq("id", id);
+}
+
 export async function updateBanner(id: string, fields: Partial<Banner>) {
   await supabase
     .from("banners")
@@ -580,6 +598,52 @@ export async function updateBanner(id: string, fields: Partial<Banner>) {
       title: fields.title,
       subtitle: fields.subtitle,
       href: fields.href,
+      image_url: fields.image,
     })
     .eq("id", id);
+}
+
+export async function createEvent(fields: {
+  title: string;
+  type: "Webinar" | "Support Group";
+  speaker: string;
+  eventDate: string;
+  quota: number;
+}) {
+  await supabase.from("events").insert({
+    title: fields.title,
+    event_type: fields.type,
+    speaker_name: fields.speaker,
+    event_date: fields.eventDate,
+    quota: fields.quota,
+  });
+}
+
+export async function deleteEvent(id: string) {
+  await supabase.from("events").delete().eq("id", id);
+}
+
+/** Updates a user's role. If promoting to psychologist, ensures a psychologist_profiles row exists. */
+export async function updateUserRole(userId: string, role: "patient" | "psychologist" | "admin") {
+  await supabase.from("profiles").update({ role }).eq("id", userId);
+  if (role === "psychologist") {
+    await supabase.from("psychologist_profiles").upsert({ id: userId });
+  }
+}
+
+/** Admin-initiated account creation. Uses the public signup API (anon key) — the new
+ * user will still need to confirm their email unless email confirmations are disabled
+ * on the Supabase project. */
+export async function createUserAsAdmin(
+  email: string,
+  password: string,
+  fullName: string,
+  role: "patient" | "psychologist" | "admin"
+) {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: fullName, role } },
+  });
+  if (error) throw error;
 }
