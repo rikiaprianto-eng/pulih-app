@@ -74,7 +74,10 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.role is distinct from old.role and not public.is_admin() then
+  -- auth.uid() is null outside of a Supabase Auth session (SQL Editor, migrations,
+  -- service_role) — those contexts are already fully trusted, so only block the
+  -- change when a specific *non-admin* authenticated client is making the request.
+  if new.role is distinct from old.role and auth.uid() is not null and not public.is_admin() then
     new.role := old.role;
   end if;
   return new;
