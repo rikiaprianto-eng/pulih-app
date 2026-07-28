@@ -28,6 +28,8 @@ export type Psychologist = {
   category: PsychologistCategory;
   hourlyRate: number | null;
   discountPercent: number;
+  couponCode: string | null;
+  couponDiscountAmount: number;
 };
 
 export type Package = {
@@ -40,6 +42,8 @@ export type Package = {
   originalPrice?: number;
   highlight?: boolean;
   badge?: string;
+  couponCode?: string;
+  couponDiscountAmount?: number;
 };
 
 export type PaymentMethod = {

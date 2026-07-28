@@ -43,6 +43,8 @@ type PsychologistRow = {
     category: "teman_curhat" | "profesional" | null;
     hourly_rate: number | null;
     discount_percent: number | null;
+    coupon_code: string | null;
+    coupon_discount_amount: number | null;
     psychologist_specializations: { specializations: { name: string } | null }[];
   } | null;
 };
@@ -55,7 +57,7 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -85,6 +87,8 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
       category: pp?.category === "profesional" ? "profesional" : "teman_curhat",
       hourlyRate: pp?.hourly_rate ?? null,
       discountPercent: pp?.discount_percent ?? 0,
+      couponCode: pp?.coupon_code ?? null,
+      couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
     };
   });
 }
@@ -96,7 +100,7 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -124,6 +128,8 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     category: pp?.category === "profesional" ? "profesional" : "teman_curhat",
     hourlyRate: pp?.hourly_rate ?? null,
     discountPercent: pp?.discount_percent ?? 0,
+    couponCode: pp?.coupon_code ?? null,
+    couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
   };
 }
 
@@ -144,6 +150,8 @@ export async function fetchPackages(): Promise<Package[]> {
     originalPrice: p.original_price ?? undefined,
     highlight: p.badge === "Paling Populer",
     badge: p.badge ?? undefined,
+    couponCode: p.coupon_code ?? undefined,
+    couponDiscountAmount: p.coupon_discount_amount ?? undefined,
   }));
 }
 
@@ -295,15 +303,17 @@ export async function fetchSessionHistory(patientId: string): Promise<SessionHis
 export async function createCheckout(
   patientId: string,
   pkg: Package,
-  paymentMethodName: string
+  paymentMethodName: string,
+  couponCode: string = ""
 ) {
   const { data: settings } = await supabase
     .from("site_settings")
     .select("teman_curhat_admin_fee")
     .eq("id", 1)
     .maybeSingle();
+  const amount = applyCoupon(pkg.price, couponCode, pkg.couponCode, pkg.couponDiscountAmount);
   const { adminFeeAmount, psychologistShareAmount } = splitTemanCurhatRevenue(
-    pkg.price,
+    amount,
     settings?.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee
   );
 
@@ -312,7 +322,7 @@ export async function createCheckout(
     .insert({
       patient_id: patientId,
       package_id: pkg.id,
-      amount: pkg.price,
+      amount,
       payment_method: paymentMethodName,
       status: "paid",
       admin_fee_amount: adminFeeAmount,
@@ -340,15 +350,17 @@ export async function createCheckout(
 /** Direct-pay checkout for a Psikolog Profesional's own hourly rate (simulated payment flow). */
 export async function createDirectCheckout(
   patientId: string,
-  psychologistId: string,
-  amount: number,
-  paymentMethodName: string
+  psy: Psychologist,
+  paymentMethodName: string,
+  couponCode: string = ""
 ): Promise<string> {
   const { data: settings } = await supabase
     .from("site_settings")
     .select("profesional_admin_fee_percent")
     .eq("id", 1)
     .maybeSingle();
+  const baseAmount = effectiveHourlyRate(psy);
+  const amount = applyCoupon(baseAmount, couponCode, psy.couponCode, psy.couponDiscountAmount);
   const { adminFeeAmount, psychologistShareAmount } = splitProfesionalRevenue(
     amount,
     settings?.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent
@@ -358,7 +370,7 @@ export async function createDirectCheckout(
     .from("transactions")
     .insert({
       patient_id: patientId,
-      psychologist_id: psychologistId,
+      psychologist_id: psy.id,
       amount,
       payment_method: paymentMethodName,
       status: "paid",
@@ -504,12 +516,29 @@ export async function setOnlineStatus(psychologistId: string, isOnline: boolean)
 export async function updateProfessionalPricing(
   psychologistId: string,
   hourlyRate: number,
-  discountPercent: number
+  discountPercent: number,
+  couponCode: string,
+  couponDiscountAmount: number
 ) {
-  await supabase
+  const { error } = await supabase
     .from("psychologist_profiles")
-    .update({ hourly_rate: hourlyRate, discount_percent: discountPercent })
+    .update({
+      hourly_rate: hourlyRate,
+      discount_percent: discountPercent,
+      coupon_code: couponCode.trim() ? couponCode.trim().toUpperCase() : null,
+      coupon_discount_amount: couponDiscountAmount || null,
+    })
     .eq("id", psychologistId);
+  if (error) throw error;
+}
+
+export async function fetchProfesionalMinHourlyRate(): Promise<number> {
+  const { data } = await supabase
+    .from("site_settings")
+    .select("profesional_min_hourly_rate")
+    .eq("id", 1)
+    .maybeSingle();
+  return data?.profesional_min_hourly_rate ?? 0;
 }
 
 /** Admin-only: change which tier a psychologist belongs to. */
@@ -520,15 +549,23 @@ export async function updatePsychologistCategory(
   await supabase.from("psychologist_profiles").update({ category }).eq("id", psychologistId);
 }
 
-export async function fetchMyPricing(
-  psychologistId: string
-): Promise<{ hourlyRate: number | null; discountPercent: number }> {
+export async function fetchMyPricing(psychologistId: string): Promise<{
+  hourlyRate: number | null;
+  discountPercent: number;
+  couponCode: string;
+  couponDiscountAmount: number;
+}> {
   const { data } = await supabase
     .from("psychologist_profiles")
-    .select("hourly_rate, discount_percent")
+    .select("hourly_rate, discount_percent, coupon_code, coupon_discount_amount")
     .eq("id", psychologistId)
     .maybeSingle();
-  return { hourlyRate: data?.hourly_rate ?? null, discountPercent: data?.discount_percent ?? 0 };
+  return {
+    hourlyRate: data?.hourly_rate ?? null,
+    discountPercent: data?.discount_percent ?? 0,
+    couponCode: data?.coupon_code ?? "",
+    couponDiscountAmount: data?.coupon_discount_amount ?? 0,
+  };
 }
 
 export async function fetchMyCategory(
@@ -842,6 +879,8 @@ export async function updatePackage(id: string, fields: Partial<Package>) {
       price: fields.price,
       original_price: fields.originalPrice ?? null,
       badge: fields.badge ?? null,
+      coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
+      coupon_discount_amount: fields.couponDiscountAmount || null,
     })
     .eq("id", id);
 }
@@ -855,6 +894,8 @@ export async function createPackage(fields: Omit<Package, "id">) {
     price: fields.price,
     original_price: fields.originalPrice ?? null,
     badge: fields.badge ?? null,
+    coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
+    coupon_discount_amount: fields.couponDiscountAmount || null,
   });
 }
 
@@ -979,6 +1020,7 @@ export type SiteSettings = {
   midtransIsProduction: boolean;
   temanCurhatAdminFee: number;
   profesionalAdminFeePercent: number;
+  profesionalMinHourlyRate: number;
 };
 
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -994,6 +1036,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   midtransIsProduction: false,
   temanCurhatAdminFee: 14000,
   profesionalAdminFeePercent: 10,
+  profesionalMinHourlyRate: 0,
 };
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
@@ -1013,6 +1056,8 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
     temanCurhatAdminFee: data.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee,
     profesionalAdminFeePercent:
       data.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent,
+    profesionalMinHourlyRate:
+      data.profesional_min_hourly_rate ?? DEFAULT_SITE_SETTINGS.profesionalMinHourlyRate,
   };
 }
 
@@ -1032,6 +1077,7 @@ export async function updateSiteSettings(fields: SiteSettings) {
       midtrans_is_production: fields.midtransIsProduction,
       teman_curhat_admin_fee: fields.temanCurhatAdminFee,
       profesional_admin_fee_percent: fields.profesionalAdminFeePercent,
+      profesional_min_hourly_rate: fields.profesionalMinHourlyRate,
     })
     .eq("id", 1);
 }
@@ -1052,6 +1098,18 @@ function splitProfesionalRevenue(amount: number, adminFeePercent: number) {
 export function effectiveHourlyRate(psy: Pick<Psychologist, "hourlyRate" | "discountPercent">): number {
   if (!psy.hourlyRate) return 0;
   return Math.round(psy.hourlyRate * (1 - Math.min(Math.max(psy.discountPercent, 0), 100) / 100));
+}
+
+/** Deducts a coupon's Rupiah value from a price if the entered code matches (case-insensitive). */
+export function applyCoupon(
+  basePrice: number,
+  enteredCode: string,
+  matchCode: string | null | undefined,
+  discountAmount: number | null | undefined
+): number {
+  if (!enteredCode.trim() || !matchCode) return basePrice;
+  if (enteredCode.trim().toUpperCase() !== matchCode.trim().toUpperCase()) return basePrice;
+  return Math.max(0, basePrice - (discountAmount || 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,7 +1154,8 @@ export async function saveMidtransServerKey(serverKey: string) {
 }
 
 export async function createMidtransTransaction(
-  packageId: string
+  packageId: string,
+  couponCode: string = ""
 ): Promise<{ token: string; transactionId: string; redirectUrl: string }> {
   const {
     data: { session },
@@ -1109,7 +1168,7 @@ export async function createMidtransTransaction(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ packageId }),
+    body: JSON.stringify({ packageId, couponCode }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? "Gagal memulai pembayaran.");
@@ -1118,7 +1177,8 @@ export async function createMidtransTransaction(
 
 /** Direct-pay Midtrans transaction for a specific Psikolog Profesional's hourly rate. */
 export async function createDirectMidtransTransaction(
-  psychologistId: string
+  psychologistId: string,
+  couponCode: string = ""
 ): Promise<{ token: string; transactionId: string; redirectUrl: string }> {
   const {
     data: { session },
@@ -1131,7 +1191,7 @@ export async function createDirectMidtransTransaction(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ psychologistId }),
+    body: JSON.stringify({ psychologistId, couponCode }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? "Gagal memulai pembayaran.");

@@ -10,7 +10,7 @@ export const handler: Handler = async (event) => {
   const userId = await requireUserId(event.headers.authorization);
   if (!userId) return jsonResponse(401, { error: "Belum login." });
 
-  let body: { packageId?: string; psychologistId?: string };
+  let body: { packageId?: string; psychologistId?: string; couponCode?: string };
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
@@ -18,6 +18,13 @@ export const handler: Handler = async (event) => {
   }
   if (!body.packageId && !body.psychologistId) {
     return jsonResponse(400, { error: "packageId atau psychologistId wajib diisi." });
+  }
+  const enteredCoupon = (body.couponCode ?? "").trim().toUpperCase();
+
+  function applyCoupon(base: number, matchCode: string | null | undefined, discount: number | null | undefined) {
+    if (!enteredCoupon || !matchCode) return base;
+    if (enteredCoupon !== matchCode.trim().toUpperCase()) return base;
+    return Math.max(0, base - (discount || 0));
   }
 
   const admin = getSupabaseAdmin();
@@ -48,7 +55,7 @@ export const handler: Handler = async (event) => {
   if (body.packageId) {
     const { data: pkg } = await admin.from("packages").select("*").eq("id", body.packageId).single();
     if (!pkg) return jsonResponse(404, { error: "Paket tidak ditemukan." });
-    amount = pkg.price;
+    amount = applyCoupon(pkg.price, pkg.coupon_code, pkg.coupon_discount_amount);
     itemId = pkg.id;
     itemName = pkg.name;
     adminFeeAmount = Math.min(Math.max(settings?.teman_curhat_admin_fee ?? 14000, 0), amount);
@@ -65,14 +72,15 @@ export const handler: Handler = async (event) => {
   } else {
     const { data: psy } = await admin
       .from("psychologist_profiles")
-      .select("id, hourly_rate, discount_percent, profiles!inner(full_name)")
+      .select("id, hourly_rate, discount_percent, coupon_code, coupon_discount_amount, profiles!inner(full_name)")
       .eq("id", body.psychologistId)
       .single();
     if (!psy || !psy.hourly_rate) {
       return jsonResponse(404, { error: "Psikolog tidak ditemukan atau belum menentukan tarif." });
     }
     const discountPercent = Math.min(Math.max(psy.discount_percent ?? 0, 0), 100);
-    amount = Math.round(psy.hourly_rate * (1 - discountPercent / 100));
+    const afterPercent = Math.round(psy.hourly_rate * (1 - discountPercent / 100));
+    amount = applyCoupon(afterPercent, psy.coupon_code, psy.coupon_discount_amount);
     itemId = psy.id;
     itemName = `Konsultasi ${(psy as unknown as { profiles: { full_name: string | null } }).profiles?.full_name ?? "Psikolog"}`;
     const feePercent = Math.min(Math.max(settings?.profesional_admin_fee_percent ?? 10, 0), 100);

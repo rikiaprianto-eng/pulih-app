@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [dataLoading, setDataLoading] = useState(true);
   const [filter, setFilter] = useState("Semua");
   const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"teman_curhat" | "profesional">("teman_curhat");
 
   useEffect(() => {
     if (!profile) return;
@@ -124,51 +125,47 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        <div className="mt-5 inline-flex rounded-full bg-slate-100 p-1">
+          <button
+            onClick={() => setActiveTab("teman_curhat")}
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              activeTab === "teman_curhat" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+            }`}
+          >
+            Teman Curhat
+          </button>
+          <button
+            onClick={() => setActiveTab("profesional")}
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+              activeTab === "profesional" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+            }`}
+          >
+            Psikolog Profesional
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          {activeTab === "teman_curhat"
+            ? "Pendamping sebaya — tarif sesuai kuota paket yang kamu punya."
+            : "Psikolog berlisensi — bayar langsung sesuai tarif per jam masing-masing."}
+        </p>
+
         {dataLoading ? (
           <div className="mt-10 flex justify-center py-10">
             <Loader2 className="animate-spin text-teal-600" size={24} />
           </div>
-        ) : filtered.length === 0 ? (
-          <p className="mt-10 py-10 text-center text-sm text-slate-400">
-            Tidak ada psikolog yang cocok dengan pencarianmu.
-          </p>
         ) : (
-          <>
-            <div className="mt-6">
-              <h3 className="font-heading text-sm font-semibold text-slate-900">
-                Teman Curhat <span className="font-normal text-slate-400">— tarif sesuai paket</span>
-              </h3>
-              {temanCurhat.length === 0 ? (
-                <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
-                  Belum ada Teman Curhat yang cocok.
-                </p>
-              ) : (
-                <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {temanCurhat.map((psy) => (
-                    <PsychologistCard key={psy.id} psy={psy} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-10">
-              <h3 className="font-heading text-sm font-semibold text-slate-900">
-                Psikolog Profesional{" "}
-                <span className="font-normal text-slate-400">— bayar langsung sesuai tarif per jam</span>
-              </h3>
-              {profesional.length === 0 ? (
-                <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
-                  Belum ada Psikolog Profesional yang cocok.
-                </p>
-              ) : (
-                <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {profesional.map((psy) => (
-                    <PsychologistCard key={psy.id} psy={psy} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {(activeTab === "teman_curhat" ? temanCurhat : profesional).map((psy) => (
+              <PsychologistCard key={psy.id} psy={psy} />
+            ))}
+            {(activeTab === "teman_curhat" ? temanCurhat : profesional).length === 0 && (
+              <p className="col-span-full py-10 text-center text-sm text-slate-400">
+                {activeTab === "teman_curhat"
+                  ? "Belum ada Teman Curhat yang cocok."
+                  : "Belum ada Psikolog Profesional yang cocok."}
+              </p>
+            )}
+          </div>
         )}
 
         <div className="mt-10 flex items-center justify-between rounded-2xl border border-dashed border-teal-200 bg-teal-50/60 p-5">

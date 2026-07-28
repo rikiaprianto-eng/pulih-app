@@ -115,13 +115,19 @@ create table if not exists public.psychologist_profiles (
   category text not null default 'teman_curhat' check (category in ('teman_curhat', 'profesional')),
   hourly_rate integer,
   -- Discount (0-100%) a Psikolog Profesional can offer on their own hourly_rate.
-  discount_percent integer not null default 0
+  discount_percent integer not null default 0,
+  -- Optional redeemable coupon on top of discount_percent: patient must type
+  -- coupon_code at checkout to get coupon_discount_amount (Rp) off.
+  coupon_code text,
+  coupon_discount_amount integer
 );
 
 -- In case psychologist_profiles already existed from an earlier run of this file.
 alter table public.psychologist_profiles add column if not exists category text not null default 'teman_curhat';
 alter table public.psychologist_profiles add column if not exists hourly_rate integer;
 alter table public.psychologist_profiles add column if not exists discount_percent integer not null default 0;
+alter table public.psychologist_profiles add column if not exists coupon_code text;
+alter table public.psychologist_profiles add column if not exists coupon_discount_amount integer;
 do $$ begin
   if not exists (
     select 1 from pg_constraint where conname = 'psychologist_profiles_category_check'
@@ -130,6 +136,33 @@ do $$ begin
       add constraint psychologist_profiles_category_check check (category in ('teman_curhat', 'profesional'));
   end if;
 end $$;
+
+-- Blocks a Psikolog Profesional from saving an hourly_rate below the admin-set
+-- floor (site_settings.profesional_min_hourly_rate), so psychologists can't
+-- undercut each other into a price war. Non-professional rows are unaffected.
+create or replace function public.enforce_min_hourly_rate()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_floor integer;
+begin
+  if new.category = 'profesional' and new.hourly_rate is not null then
+    select profesional_min_hourly_rate into v_floor from public.site_settings where id = 1;
+    if v_floor is not null and new.hourly_rate < v_floor then
+      raise exception 'Tarif per jam tidak boleh di bawah Rp% (batas minimum ditetapkan admin).', v_floor;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists check_min_hourly_rate on public.psychologist_profiles;
+create trigger check_min_hourly_rate
+  before insert or update on public.psychologist_profiles
+  for each row execute function public.enforce_min_hourly_rate();
 
 create table if not exists public.specializations (
   id uuid primary key default gen_random_uuid(),
@@ -192,8 +225,15 @@ create table if not exists public.packages (
   original_price integer,
   badge text,
   is_active boolean not null default true,
-  sort_order integer not null default 0
+  sort_order integer not null default 0,
+  -- Optional redeemable coupon: patient must type coupon_code at checkout to
+  -- get coupon_discount_amount (Rp) off, on top of the price/original_price discount.
+  coupon_code text,
+  coupon_discount_amount integer
 );
+
+alter table public.packages add column if not exists coupon_code text;
+alter table public.packages add column if not exists coupon_discount_amount integer;
 
 create table if not exists public.banners (
   id uuid primary key default gen_random_uuid(),
@@ -403,6 +443,9 @@ create table if not exists public.site_settings (
   teman_curhat_admin_fee integer not null default 14000,
   -- Platform fee percentage (0-100) taken from every Psikolog Profesional hourly-rate transaction.
   profesional_admin_fee_percent integer not null default 10,
+  -- Floor (Rp) a Psikolog Profesional's hourly_rate may not go below, so psychologists
+  -- can't race each other to the bottom on price. Enforced by enforce_min_hourly_rate().
+  profesional_min_hourly_rate integer not null default 0,
   constraint site_settings_single_row check (id = 1)
 );
 
@@ -411,6 +454,7 @@ create table if not exists public.site_settings (
 alter table public.site_settings add column if not exists logo_url text;
 alter table public.site_settings add column if not exists teman_curhat_admin_fee integer not null default 14000;
 alter table public.site_settings add column if not exists profesional_admin_fee_percent integer not null default 10;
+alter table public.site_settings add column if not exists profesional_min_hourly_rate integer not null default 0;
 
 -- Server-only secret storage. Deliberately has NO select/insert/update policies for
 -- anon or authenticated roles below — only the service_role key (used exclusively

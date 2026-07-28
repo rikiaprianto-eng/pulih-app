@@ -816,6 +816,11 @@ export default function AdminPage() {
                                       </span>
                                     )}
                                     <span className="font-semibold text-slate-800">{formatIDR(p.price)}</span>
+                                    {p.couponCode && (
+                                      <span className="mt-1 block text-[11px] font-medium text-emerald-600">
+                                        Kupon {p.couponCode}: -{formatIDR(p.couponDiscountAmount ?? 0)}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="px-5 py-3.5 text-xs text-slate-500">
                                     Admin {formatIDR(adminFee)} &middot; Psikolog{" "}
@@ -853,13 +858,19 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-5 max-w-md">
+                    <div className="mt-5 max-w-md space-y-4">
                       <AdminFeeCard
                         label="Biaya Admin (%)"
                         description="Persentase yang menjadi hak platform dari setiap pembayaran langsung ke Psikolog Profesional. Psikolog menentukan tarif per jam & diskonnya sendiri di dashboard masing-masing."
                         value={settings.profesionalAdminFeePercent}
                         suffix="%"
                         onSave={(v) => handleSaveSettings({ ...settings, profesionalAdminFeePercent: v })}
+                      />
+                      <AdminFeeCard
+                        label="Batas Bawah Tarif per Jam (Rp)"
+                        description="Psikolog Profesional tidak bisa mengatur tarif per jam di bawah nominal ini, supaya tidak saling banting harga."
+                        value={settings.profesionalMinHourlyRate}
+                        onSave={(v) => handleSaveSettings({ ...settings, profesionalMinHourlyRate: v })}
                       />
                     </div>
                   )}
@@ -882,6 +893,7 @@ export default function AdminPage() {
       {editingPackage && (
         <EditPackageModal
           pkg={editingPackage}
+          adminFee={settings?.temanCurhatAdminFee ?? 14000}
           onCancel={() => setEditingPackage(null)}
           onSave={savePackage}
         />
@@ -897,7 +909,11 @@ export default function AdminPage() {
         <AddUserModal onCancel={() => setAddingUser(false)} onSave={handleCreateUser} />
       )}
       {addingPackage && (
-        <AddPackageModal onCancel={() => setAddingPackage(false)} onSave={handleCreatePackage} />
+        <AddPackageModal
+          adminFee={settings?.temanCurhatAdminFee ?? 14000}
+          onCancel={() => setAddingPackage(false)}
+          onSave={handleCreatePackage}
+        />
       )}
       {addingEvent && (
         <AddEventModal onCancel={() => setAddingEvent(false)} onSave={handleCreateEvent} />
@@ -1029,16 +1045,42 @@ function ModalShell({
   );
 }
 
+function PriceBreakdown({ price, adminFee }: { price: number; adminFee: number }) {
+  const fee = Math.min(Math.max(adminFee, 0), price);
+  return (
+    <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+      <div className="flex justify-between">
+        <span>Harga Dasar</span>
+        <span className="font-medium text-slate-800">{formatIDR(price)}</span>
+      </div>
+      <div className="mt-1 flex justify-between">
+        <span>Biaya Admin</span>
+        <span className="font-medium text-slate-800">{formatIDR(fee)}</span>
+      </div>
+      <div className="mt-1 flex justify-between border-t border-slate-200 pt-1">
+        <span>Bagian Psikolog</span>
+        <span className="font-semibold text-teal-700">{formatIDR(price - fee)}</span>
+      </div>
+    </div>
+  );
+}
+
 function EditPackageModal({
   pkg,
+  adminFee,
   onCancel,
   onSave,
 }: {
   pkg: Package;
+  adminFee: number;
   onCancel: () => void;
   onSave: (pkg: Package) => void;
 }) {
-  const [form, setForm] = useState(pkg);
+  const [form, setForm] = useState({
+    ...pkg,
+    couponCode: pkg.couponCode ?? "",
+    couponDiscountAmount: pkg.couponDiscountAmount ?? 0,
+  });
   const [saving, setSaving] = useState(false);
 
   return (
@@ -1065,6 +1107,7 @@ function EditPackageModal({
         value={form.originalPrice ? String(form.originalPrice) : ""}
         onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
       />
+      <PriceBreakdown price={form.price} adminFee={adminFee} />
       <Field
         label="Durasi (menit)"
         type="number"
@@ -1077,14 +1120,27 @@ function EditPackageModal({
         value={String(form.sessionQuota)}
         onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
       />
+      <Field
+        label="Kode Kupon Diskon (opsional)"
+        value={form.couponCode}
+        onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
+      />
+      <Field
+        label="Nilai Kupon (Rp)"
+        type="number"
+        value={String(form.couponDiscountAmount)}
+        onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
+      />
     </ModalShell>
   );
 }
 
 function AddPackageModal({
+  adminFee,
   onCancel,
   onSave,
 }: {
+  adminFee: number;
   onCancel: () => void;
   onSave: (pkg: Omit<Package, "id">) => Promise<void>;
 }) {
@@ -1094,6 +1150,8 @@ function AddPackageModal({
     durationMinutes: 60,
     sessionQuota: 1,
     price: 0,
+    couponCode: "",
+    couponDiscountAmount: 0,
   });
   const [saving, setSaving] = useState(false);
 
@@ -1128,6 +1186,7 @@ function AddPackageModal({
         value={form.originalPrice ? String(form.originalPrice) : ""}
         onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
       />
+      <PriceBreakdown price={form.price} adminFee={adminFee} />
       <Field
         label="Durasi (menit)"
         type="number"
@@ -1139,6 +1198,17 @@ function AddPackageModal({
         type="number"
         value={String(form.sessionQuota)}
         onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
+      />
+      <Field
+        label="Kode Kupon Diskon (opsional)"
+        value={form.couponCode ?? ""}
+        onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
+      />
+      <Field
+        label="Nilai Kupon (Rp)"
+        type="number"
+        value={String(form.couponDiscountAmount ?? 0)}
+        onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
       />
     </ModalShell>
   );

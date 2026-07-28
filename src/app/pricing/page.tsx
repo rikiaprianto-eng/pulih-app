@@ -16,7 +16,14 @@ import Footer from "@/components/Footer";
 import { paymentMethods, Package } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
 import { useAuth } from "@/lib/useAuth";
-import { fetchPackages, createCheckout, fetchSiteSettings, createMidtransTransaction, SiteSettings } from "@/lib/queries";
+import {
+  fetchPackages,
+  createCheckout,
+  fetchSiteSettings,
+  createMidtransTransaction,
+  applyCoupon,
+  SiteSettings,
+} from "@/lib/queries";
 import { setRedirectAfterLogin } from "@/lib/auth";
 
 type Step = "package" | "payment" | "success";
@@ -50,8 +57,33 @@ export default function PricingPage() {
   const [selectedMethod, setSelectedMethod] = useState(paymentMethods[0]);
   const [processing, setProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
+  const finalPrice = selectedPkg
+    ? applyCoupon(selectedPkg.price, appliedCoupon ?? "", selectedPkg.couponCode, selectedPkg.couponDiscountAmount)
+    : 0;
+  const couponApplied = !!appliedCoupon && !!selectedPkg && finalPrice < selectedPkg.price;
+
+  function applyCouponCode() {
+    if (!selectedPkg) return;
+    setCouponError(null);
+    if (!couponInput.trim()) return;
+    const testResult = applyCoupon(
+      selectedPkg.price,
+      couponInput,
+      selectedPkg.couponCode,
+      selectedPkg.couponDiscountAmount
+    );
+    if (testResult === selectedPkg.price) {
+      setCouponError("Kode kupon tidak valid.");
+      setAppliedCoupon(null);
+      return;
+    }
+    setAppliedCoupon(couponInput.trim());
+  }
 
   useEffect(() => {
     Promise.all([fetchPackages(), fetchSiteSettings()]).then(([pkgs, s]) => {
@@ -91,6 +123,9 @@ export default function PricingPage() {
   function choosePackage(pkg: Package) {
     setSelectedPkg(pkg);
     setStep("payment");
+    setCouponInput("");
+    setAppliedCoupon(null);
+    setCouponError(null);
   }
 
   async function pay() {
@@ -106,7 +141,7 @@ export default function PricingPage() {
 
     if (useMidtrans) {
       try {
-        const { token } = await createMidtransTransaction(selectedPkg.id);
+        const { token } = await createMidtransTransaction(selectedPkg.id, appliedCoupon ?? "");
         if (!window.snap) throw new Error("Midtrans belum siap, coba lagi sebentar.");
         window.snap.pay(token, {
           onSuccess: () => setStep("success"),
@@ -122,7 +157,7 @@ export default function PricingPage() {
     }
 
     try {
-      await createCheckout(profile.id, selectedPkg, selectedMethod.name);
+      await createCheckout(profile.id, selectedPkg, selectedMethod.name, appliedCoupon ?? "");
       setStep("success");
     } catch {
       setPayError("Gagal memproses pembayaran. Coba lagi.");
@@ -341,9 +376,45 @@ export default function PricingPage() {
                       <span className="text-slate-500">Biaya layanan</span>
                       <span className="font-medium text-slate-800">Rp0</span>
                     </div>
+                    {couponApplied && (
+                      <div className="mt-2 flex justify-between text-sm">
+                        <span className="text-slate-500">Kupon {appliedCoupon}</span>
+                        <span className="font-medium text-emerald-600">
+                          -{formatIDR(selectedPkg.price - finalPrice)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                        Kode Kupon (opsional)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          value={couponInput}
+                          onChange={(e) => {
+                            setCouponInput(e.target.value.toUpperCase());
+                            setCouponError(null);
+                          }}
+                          placeholder="PROMO50K"
+                          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        />
+                        <button
+                          onClick={applyCouponCode}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          Terapkan
+                        </button>
+                      </div>
+                      {couponError && <p className="mt-1 text-[11px] text-red-600">{couponError}</p>}
+                      {couponApplied && (
+                        <p className="mt-1 text-[11px] text-emerald-600">Kupon berhasil diterapkan.</p>
+                      )}
+                    </div>
+
                     <div className="mt-4 flex justify-between border-t border-slate-100 pt-4 text-sm font-semibold">
                       <span className="text-slate-900">Total</span>
-                      <span className="text-teal-700">{formatIDR(selectedPkg.price)}</span>
+                      <span className="text-teal-700">{formatIDR(finalPrice)}</span>
                     </div>
 
                     {payError && (

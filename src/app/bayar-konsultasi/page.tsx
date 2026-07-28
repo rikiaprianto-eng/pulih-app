@@ -23,6 +23,7 @@ import {
   createDirectCheckout,
   createDirectMidtransTransaction,
   effectiveHourlyRate,
+  applyCoupon,
   SiteSettings,
 } from "@/lib/queries";
 import { setRedirectAfterLogin } from "@/lib/auth";
@@ -56,6 +57,9 @@ export default function BayarKonsultasiPage() {
   const [processing, setProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [paidTransactionId, setPaidTransactionId] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
 
@@ -88,8 +92,23 @@ export default function BayarKonsultasiPage() {
     document.body.appendChild(script);
   }, [settings]);
 
-  const finalRate = psy ? effectiveHourlyRate(psy) : 0;
+  const afterDiscountRate = psy ? effectiveHourlyRate(psy) : 0;
+  const finalRate = psy ? applyCoupon(afterDiscountRate, appliedCoupon ?? "", psy.couponCode, psy.couponDiscountAmount) : 0;
   const hasDiscount = !!psy && psy.discountPercent > 0;
+  const couponApplied = !!appliedCoupon && finalRate < afterDiscountRate;
+
+  function applyCouponCode() {
+    if (!psy) return;
+    setCouponError(null);
+    if (!couponInput.trim()) return;
+    const testResult = applyCoupon(afterDiscountRate, couponInput, psy.couponCode, psy.couponDiscountAmount);
+    if (testResult === afterDiscountRate) {
+      setCouponError("Kode kupon tidak valid.");
+      setAppliedCoupon(null);
+      return;
+    }
+    setAppliedCoupon(couponInput.trim());
+  }
 
   async function pay() {
     if (!psy || !psy.hourlyRate) return;
@@ -103,7 +122,7 @@ export default function BayarKonsultasiPage() {
 
     if (useMidtrans) {
       try {
-        const { token, transactionId } = await createDirectMidtransTransaction(psy.id);
+        const { token, transactionId } = await createDirectMidtransTransaction(psy.id, appliedCoupon ?? "");
         if (!window.snap) throw new Error("Midtrans belum siap, coba lagi sebentar.");
         window.snap.pay(token, {
           onSuccess: () => {
@@ -125,7 +144,12 @@ export default function BayarKonsultasiPage() {
     }
 
     try {
-      const transactionId = await createDirectCheckout(profile.id, psy.id, finalRate, selectedMethod.name);
+      const transactionId = await createDirectCheckout(
+        profile.id,
+        psy,
+        selectedMethod.name,
+        appliedCoupon ?? ""
+      );
       setPaidTransactionId(transactionId);
       setStep("success");
     } catch {
@@ -287,25 +311,50 @@ export default function BayarKonsultasiPage() {
                     </div>
                     <div className="mt-4 flex justify-between text-sm">
                       <span className="text-slate-500">Tarif per jam</span>
-                      <span className="font-medium text-slate-800">
-                        {hasDiscount ? (
-                          <>
-                            <span className="mr-1.5 text-slate-400 line-through">
-                              {formatIDR(psy.hourlyRate ?? 0)}
-                            </span>
-                            {formatIDR(finalRate)}
-                          </>
-                        ) : (
-                          formatIDR(psy.hourlyRate ?? 0)
-                        )}
-                      </span>
+                      <span className="font-medium text-slate-800">{formatIDR(psy.hourlyRate ?? 0)}</span>
                     </div>
                     {hasDiscount && (
                       <div className="mt-2 flex justify-between text-sm">
                         <span className="text-slate-500">Diskon</span>
-                        <span className="font-medium text-emerald-600">{psy.discountPercent}%</span>
+                        <span className="font-medium text-emerald-600">-{psy.discountPercent}%</span>
                       </div>
                     )}
+                    {couponApplied && (
+                      <div className="mt-2 flex justify-between text-sm">
+                        <span className="text-slate-500">Kupon {appliedCoupon}</span>
+                        <span className="font-medium text-emerald-600">
+                          -{formatIDR(afterDiscountRate - finalRate)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                        Kode Kupon (opsional)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          value={couponInput}
+                          onChange={(e) => {
+                            setCouponInput(e.target.value.toUpperCase());
+                            setCouponError(null);
+                          }}
+                          placeholder="PROMO50K"
+                          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        />
+                        <button
+                          onClick={applyCouponCode}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          Terapkan
+                        </button>
+                      </div>
+                      {couponError && <p className="mt-1 text-[11px] text-red-600">{couponError}</p>}
+                      {couponApplied && (
+                        <p className="mt-1 text-[11px] text-emerald-600">Kupon berhasil diterapkan.</p>
+                      )}
+                    </div>
+
                     <div className="mt-4 flex justify-between border-t border-slate-100 pt-4 text-sm font-semibold">
                       <span className="text-slate-900">Total</span>
                       <span className="text-teal-700">{formatIDR(finalRate)}</span>

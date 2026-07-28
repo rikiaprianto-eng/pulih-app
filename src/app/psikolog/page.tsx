@@ -33,6 +33,7 @@ import {
   fetchMyCategory,
   fetchMyPricing,
   updateProfessionalPricing,
+  fetchProfesionalMinHourlyRate,
   fetchIncomingSession,
   endSession,
   submitTextAnswer,
@@ -74,6 +75,9 @@ export default function PsikologPage() {
   const [category, setCategory] = useState<"teman_curhat" | "profesional">("teman_curhat");
   const [hourlyRate, setHourlyRate] = useState<number | null>(null);
   const [discountPercent, setDiscountPercent] = useState(0);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscountAmount, setCouponDiscountAmount] = useState(0);
+  const [minHourlyRate, setMinHourlyRate] = useState(0);
 
   useEffect(() => {
     if (!profile) return;
@@ -143,7 +147,8 @@ export default function PsikologPage() {
       fetchMySubmissions(profile.id),
       fetchMyCategory(profile.id),
       fetchMyPricing(profile.id),
-    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs, cat, pricing]) => {
+      fetchProfesionalMinHourlyRate(),
+    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs, cat, pricing, minRate]) => {
       setSchedule(sched);
       setPatients(pts);
       setOnline(isOnline);
@@ -153,6 +158,9 @@ export default function PsikologPage() {
       setCategory(cat);
       setHourlyRate(pricing.hourlyRate);
       setDiscountPercent(pricing.discountPercent);
+      setCouponCode(pricing.couponCode);
+      setCouponDiscountAmount(pricing.couponDiscountAmount);
+      setMinHourlyRate(minRate);
       setLoading(false);
     });
   }
@@ -268,9 +276,14 @@ export default function PsikologPage() {
             profileId={profile.id}
             hourlyRate={hourlyRate}
             discountPercent={discountPercent}
-            onSaved={(rate, discount) => {
+            couponCode={couponCode}
+            couponDiscountAmount={couponDiscountAmount}
+            minHourlyRate={minHourlyRate}
+            onSaved={(rate, discount, coupon, couponAmount) => {
               setHourlyRate(rate);
               setDiscountPercent(discount);
+              setCouponCode(coupon);
+              setCouponDiscountAmount(couponAmount);
             }}
           />
         )}
@@ -399,29 +412,50 @@ function HourlyRateCard({
   profileId,
   hourlyRate,
   discountPercent,
+  couponCode,
+  couponDiscountAmount,
+  minHourlyRate,
   onSaved,
 }: {
   profileId: string;
   hourlyRate: number | null;
   discountPercent: number;
-  onSaved: (rate: number, discount: number) => void;
+  couponCode: string;
+  couponDiscountAmount: number;
+  minHourlyRate: number;
+  onSaved: (rate: number, discount: number, coupon: string, couponAmount: number) => void;
 }) {
   const [value, setValue] = useState(hourlyRate ? String(hourlyRate) : "");
   const [discountValue, setDiscountValue] = useState(String(discountPercent || 0));
+  const [couponValue, setCouponValue] = useState(couponCode);
+  const [couponAmountValue, setCouponAmountValue] = useState(String(couponDiscountAmount || 0));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const rateNum = Number(value) || 0;
   const discountNum = Math.min(Math.max(Number(discountValue) || 0, 0), 100);
-  const finalRate = Math.round(rateNum * (1 - discountNum / 100));
+  const couponAmountNum = Number(couponAmountValue) || 0;
+  const afterDiscount = Math.round(rateNum * (1 - discountNum / 100));
+  const finalRate = couponValue.trim() ? Math.max(0, afterDiscount - couponAmountNum) : afterDiscount;
 
   async function handleSave() {
     if (!rateNum || rateNum <= 0) return;
+    if (minHourlyRate > 0 && rateNum < minHourlyRate) {
+      setError(`Tarif tidak boleh di bawah ${formatIDR(minHourlyRate)} (batas minimum dari admin).`);
+      return;
+    }
+    setError(null);
     setSaving(true);
-    await updateProfessionalPricing(profileId, rateNum, discountNum);
-    setSaving(false);
-    setSaved(true);
-    onSaved(rateNum, discountNum);
+    try {
+      await updateProfessionalPricing(profileId, rateNum, discountNum, couponValue, couponAmountNum);
+      setSaved(true);
+      onSaved(rateNum, discountNum, couponValue.trim() ? couponValue.trim().toUpperCase() : "", couponAmountNum);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menyimpan tarif.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -435,11 +469,27 @@ function HourlyRateCard({
             Tarif & Diskon Konsultasi per Jam
           </h2>
           <p className="mt-0.5 text-xs text-slate-600">
-            Sebagai Psikolog Profesional, pasien membayar langsung sesuai tarif (dikurangi diskon
-            jika ada) yang kamu tentukan di sini.
+            Sebagai Psikolog Profesional, pasien membayar langsung sesuai tarif (dikurangi diskon &
+            kupon jika ada) yang kamu tentukan di sini.
+            {minHourlyRate > 0 && ` Tarif minimum yang ditetapkan admin: ${formatIDR(minHourlyRate)}.`}
           </p>
         </div>
       </div>
+
+      {hourlyRate && (
+        <div className="mt-4 rounded-xl bg-white px-4 py-2.5 text-sm">
+          <span className="text-slate-500">Tarif aktif saat ini: </span>
+          <strong className="text-slate-900">{formatIDR(hourlyRate)}/jam</strong>
+          {discountPercent > 0 && <span className="text-emerald-600"> (diskon {discountPercent}%)</span>}
+          {couponCode && (
+            <span className="text-emerald-600">
+              {" "}
+              &middot; kupon {couponCode} -{formatIDR(couponDiscountAmount)}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Tarif per jam</label>
@@ -452,6 +502,7 @@ function HourlyRateCard({
               onChange={(e) => {
                 setValue(e.target.value);
                 setSaved(false);
+                setError(null);
               }}
               placeholder="250000"
               className="w-28 text-sm outline-none"
@@ -485,9 +536,43 @@ function HourlyRateCard({
           {saved ? "Tersimpan" : "Simpan"}
         </button>
       </div>
-      {discountNum > 0 && rateNum > 0 && (
+
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Kode Kupon Diskon (opsional)
+          </label>
+          <input
+            value={couponValue}
+            onChange={(e) => {
+              setCouponValue(e.target.value.toUpperCase());
+              setSaved(false);
+            }}
+            placeholder="PROMO50K"
+            className="w-40 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Nilai Kupon (Rp)</label>
+          <input
+            type="number"
+            min={0}
+            value={couponAmountValue}
+            onChange={(e) => {
+              setCouponAmountValue(e.target.value);
+              setSaved(false);
+            }}
+            placeholder="50000"
+            className="w-32 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+          />
+        </div>
+      </div>
+
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {!error && (discountNum > 0 || couponValue.trim()) && rateNum > 0 && (
         <p className="mt-2 text-xs text-slate-600">
-          Pasien akan membayar <strong>{formatIDR(finalRate)}</strong> per jam setelah diskon.
+          Pasien akan membayar <strong>{formatIDR(finalRate)}</strong> per jam setelah diskon
+          {couponValue.trim() ? " + kupon" : ""}.
         </p>
       )}
     </div>
