@@ -1193,6 +1193,28 @@ export function roundToNearest1000(amount: number): number {
   return Math.round(Math.max(amount, 0) / 1000) * 1000;
 }
 
+/**
+ * Builds a Lynk.id checkout deep-link with the quantity pre-filled, so the patient
+ * lands straight on the payment step with the exact total already set — no manual
+ * Qty entry. Lynk.id's checkout page reads its cart state from a `token` query
+ * param: a base64-encoded query string containing `qty_prod`. This isn't a
+ * documented API — it was reverse-engineered by inspecting the URL Lynk.id's own
+ * "Buy Now" button navigates to — so if Lynk.id ever changes that scheme this
+ * link degrades to opening the plain product page (still safe, just no longer
+ * pre-filled) rather than breaking checkout entirely.
+ */
+export function buildLynkidCheckoutUrl(productUrl: string, qty: number): string {
+  try {
+    const parsed = new URL(productUrl);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    const tokenRaw = `params=%5B%5D&tickets=%5B%5D&bid_price=0&qty_prod=${Math.max(1, Math.round(qty))}&sessid=&total_price=&total_unit=`;
+    const token = btoa(tokenRaw);
+    return `https://lynk.id${path}/checkout?token=${token}`;
+  } catch {
+    return productUrl;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Banner image upload (Supabase Storage)
 // ---------------------------------------------------------------------------

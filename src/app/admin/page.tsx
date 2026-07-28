@@ -1900,7 +1900,7 @@ function SettingsTab({
               {form.paymentGateway === "manual"
                 ? "Aktif sekarang: setiap transaksi langsung berstatus lunas begitu pasien klik \"Bayar Sekarang\" — tidak perlu Server/Client Key, tidak ada biaya transaksi, dan tidak perlu verifikasi manual dari admin."
                 : form.paymentGateway === "lynkid"
-                  ? "Buat 1 produk di Lynk.id seharga Rp1.000 dan tempel link-nya di bawah — satu link ini dipakai untuk semua paket & semua psikolog. Saat bayar, pasien mengubah jumlah (Qty) produk sesuai total harga dibagi Rp1.000. Isi juga Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
+                  ? "Buat 1 produk di Lynk.id seharga Rp1.000 dan tempel link-nya di bawah — satu link ini dipakai untuk semua paket & semua psikolog. Jumlah (Qty) dan total harga terisi otomatis lewat link checkout yang dibuatkan sistem, jadi pasien tinggal klik Bayar tanpa mengubah apa pun. Isi juga Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
                   : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
             </p>
           </div>

@@ -27,6 +27,7 @@ import {
   effectiveHourlyRate,
   applyCoupon,
   roundToNearest1000,
+  buildLynkidCheckoutUrl,
   SiteSettings,
 } from "@/lib/queries";
 import { setRedirectAfterLogin } from "@/lib/auth";
@@ -139,7 +140,8 @@ export default function BayarKonsultasiPage() {
           psychologistId: psy.id,
           amount: finalRate,
         });
-        window.open(settings.lynkidProductUrl, "_blank", "noopener,noreferrer");
+        const checkoutUrl = buildLynkidCheckoutUrl(settings.lynkidProductUrl, lynkQty);
+        window.open(checkoutUrl, "_blank", "noopener,noreferrer");
         setWaitingLynk(true);
         setProcessing(false);
         const poll = setInterval(async () => {
@@ -253,17 +255,11 @@ export default function BayarKonsultasiPage() {
                         </h2>
                         <p className="mt-2 text-sm text-slate-500">
                           Klik &ldquo;Bayar Sekarang&rdquo; — halaman pembayaran Lynk.id akan
-                          terbuka di tab baru. Setelah pembayaran selesai, halaman ini otomatis
-                          mendeteksi dan sesi konsultasimu langsung siap dimulai.
+                          terbuka di tab baru dengan total <strong>{formatIDR(finalRate)}</strong>{" "}
+                          sudah terisi otomatis. Kamu tidak perlu mengubah apa pun — tinggal bayar.
+                          Setelah pembayaran selesai, halaman ini otomatis mendeteksi dan sesi
+                          konsultasimu langsung siap dimulai.
                         </p>
-                        <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-                          Di halaman Lynk.id, atur <strong>jumlah (Qty)</strong> produk menjadi{" "}
-                          <strong className="font-heading text-base">
-                            {lynkQty.toLocaleString("id-ID")}
-                          </strong>{" "}
-                          — produk seharga Rp1.000 &times; {lynkQty.toLocaleString("id-ID")} ={" "}
-                          <strong>{formatIDR(finalRate)}</strong>.
-                        </div>
                         <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
                           Penting: saat mengisi data pembeli di Lynk.id, gunakan email yang sama
                           dengan akun Pulih-mu ({profile?.email ?? "email akunmu"}) supaya
