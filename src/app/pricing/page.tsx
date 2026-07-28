@@ -181,7 +181,7 @@ export default function PricingPage() {
                   Pilih paket konseling yang sesuai
                 </h1>
                 <p className="mt-3 text-slate-500">
-                  Semua paket termasuk sesi video privat dengan psikolog berlisensi.
+                  Semua paket termasuk sesi video privat dengan Teman Curhat pilihanmu.
                 </p>
               </div>
 

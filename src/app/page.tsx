@@ -38,6 +38,7 @@ export default function Home() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activePsyTab, setActivePsyTab] = useState<"teman_curhat" | "profesional">("teman_curhat");
 
   useEffect(() => {
     Promise.all([fetchBanners(), fetchPsychologists(), fetchEvents(), fetchFacilities()]).then(
@@ -50,6 +51,10 @@ export default function Home() {
       }
     );
   }, []);
+
+  const psychologistsByTab = psychologists.filter((p) =>
+    activePsyTab === "profesional" ? p.category === "profesional" : p.category !== "profesional"
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -162,20 +167,39 @@ export default function Home() {
               </Link>
             </div>
 
+            <div className="mt-6 inline-flex rounded-full bg-white p-1 ring-1 ring-slate-200">
+              <button
+                onClick={() => setActivePsyTab("teman_curhat")}
+                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                  activePsyTab === "teman_curhat" ? "bg-teal-600 text-white" : "text-slate-500"
+                }`}
+              >
+                Teman Curhat
+              </button>
+              <button
+                onClick={() => setActivePsyTab("profesional")}
+                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                  activePsyTab === "profesional" ? "bg-teal-600 text-white" : "text-slate-500"
+                }`}
+              >
+                Psikolog Profesional
+              </button>
+            </div>
+
             {loading ? (
               <div className="mt-8 flex justify-center py-10">
                 <Loader2 className="animate-spin text-teal-600" size={24} />
               </div>
-            ) : psychologists.length === 0 ? (
+            ) : psychologistsByTab.length === 0 ? (
               <p className="mt-8 text-sm text-slate-400">
-                Belum ada psikolog terdaftar. Daftar sebagai psikolog untuk jadi yang pertama!
+                {activePsyTab === "teman_curhat"
+                  ? "Belum ada Teman Curhat terverifikasi. Daftar sebagai psikolog untuk jadi yang pertama!"
+                  : "Belum ada Psikolog Profesional terverifikasi."}
               </p>
             ) : (
-              <div className="mt-8 flex gap-4 overflow-x-auto pb-4 no-scrollbar sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
-                {psychologists.slice(0, 6).map((psy) => (
-                  <div key={psy.id} className="w-72 shrink-0 sm:w-auto">
-                    <PsychologistCard psy={psy} />
-                  </div>
+              <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {psychologistsByTab.map((psy) => (
+                  <PsychologistCard key={psy.id} psy={psy} />
                 ))}
               </div>
             )}

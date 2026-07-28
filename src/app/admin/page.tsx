@@ -501,8 +501,9 @@ export default function AdminPage() {
                               {u.rawRole === "psychologist" ? (
                                 <button
                                   onClick={() => handleToggleOnline(u.id, !u.isOnline)}
-                                  disabled={updatingOnlineId === u.id}
-                                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+                                  disabled={updatingOnlineId === u.id || u.status !== "Aktif"}
+                                  title={u.status !== "Aktif" ? "Hanya psikolog terverifikasi yang bisa online" : undefined}
+                                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                                     u.isOnline
                                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                       : "bg-slate-100 text-slate-500 hover:bg-slate-200"
@@ -823,7 +824,7 @@ export default function AdminPage() {
                                     )}
                                   </td>
                                   <td className="px-5 py-3.5 text-xs text-slate-500">
-                                    Admin {formatIDR(adminFee)} &middot; Psikolog{" "}
+                                    Admin {formatIDR(adminFee)} &middot; Teman Curhat{" "}
                                     {formatIDR(p.price - adminFee)}
                                   </td>
                                   <td className="px-5 py-3.5">
@@ -1058,7 +1059,7 @@ function PriceBreakdown({ price, adminFee }: { price: number; adminFee: number }
         <span className="font-medium text-slate-800">{formatIDR(fee)}</span>
       </div>
       <div className="mt-1 flex justify-between border-t border-slate-200 pt-1">
-        <span>Bagian Psikolog</span>
+        <span>Bagian Teman Curhat</span>
         <span className="font-semibold text-teal-700">{formatIDR(price - fee)}</span>
       </div>
     </div>

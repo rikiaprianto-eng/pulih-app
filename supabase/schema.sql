@@ -164,6 +164,28 @@ create trigger check_min_hourly_rate
   before insert or update on public.psychologist_profiles
   for each row execute function public.enforce_min_hourly_rate();
 
+-- A psychologist can only be marked is_online while verification_status = 'verified'
+-- (silently forces it back to false otherwise) — enforced at the DB level so this
+-- can't be bypassed via the admin toggle or a direct API call, not just the UI.
+create or replace function public.enforce_online_requires_verified()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.verification_status is distinct from 'verified' then
+    new.is_online := false;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists check_online_requires_verified on public.psychologist_profiles;
+create trigger check_online_requires_verified
+  before insert or update on public.psychologist_profiles
+  for each row execute function public.enforce_online_requires_verified();
+
 create table if not exists public.specializations (
   id uuid primary key default gen_random_uuid(),
   name text unique not null
