@@ -77,6 +77,7 @@ export default function PsikologPage() {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscountAmount, setCouponDiscountAmount] = useState(0);
+  const [lynkidUrl, setLynkidUrl] = useState("");
   const [minHourlyRate, setMinHourlyRate] = useState(0);
 
   useEffect(() => {
@@ -160,6 +161,7 @@ export default function PsikologPage() {
       setDiscountPercent(pricing.discountPercent);
       setCouponCode(pricing.couponCode);
       setCouponDiscountAmount(pricing.couponDiscountAmount);
+      setLynkidUrl(pricing.lynkidUrl);
       setMinHourlyRate(minRate);
       setLoading(false);
     });
@@ -278,12 +280,14 @@ export default function PsikologPage() {
             discountPercent={discountPercent}
             couponCode={couponCode}
             couponDiscountAmount={couponDiscountAmount}
+            lynkidUrl={lynkidUrl}
             minHourlyRate={minHourlyRate}
-            onSaved={(rate, discount, coupon, couponAmount) => {
+            onSaved={(rate, discount, coupon, couponAmount, lynk) => {
               setHourlyRate(rate);
               setDiscountPercent(discount);
               setCouponCode(coupon);
               setCouponDiscountAmount(couponAmount);
+              setLynkidUrl(lynk);
             }}
           />
         )}
@@ -414,6 +418,7 @@ function HourlyRateCard({
   discountPercent,
   couponCode,
   couponDiscountAmount,
+  lynkidUrl,
   minHourlyRate,
   onSaved,
 }: {
@@ -422,13 +427,15 @@ function HourlyRateCard({
   discountPercent: number;
   couponCode: string;
   couponDiscountAmount: number;
+  lynkidUrl: string;
   minHourlyRate: number;
-  onSaved: (rate: number, discount: number, coupon: string, couponAmount: number) => void;
+  onSaved: (rate: number, discount: number, coupon: string, couponAmount: number, lynk: string) => void;
 }) {
   const [value, setValue] = useState(hourlyRate ? String(hourlyRate) : "");
   const [discountValue, setDiscountValue] = useState(String(discountPercent || 0));
   const [couponValue, setCouponValue] = useState(couponCode);
   const [couponAmountValue, setCouponAmountValue] = useState(String(couponDiscountAmount || 0));
+  const [lynkValue, setLynkValue] = useState(lynkidUrl);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -448,9 +455,22 @@ function HourlyRateCard({
     setError(null);
     setSaving(true);
     try {
-      await updateProfessionalPricing(profileId, rateNum, discountNum, couponValue, couponAmountNum);
+      await updateProfessionalPricing(
+        profileId,
+        rateNum,
+        discountNum,
+        couponValue,
+        couponAmountNum,
+        lynkValue
+      );
       setSaved(true);
-      onSaved(rateNum, discountNum, couponValue.trim() ? couponValue.trim().toUpperCase() : "", couponAmountNum);
+      onSaved(
+        rateNum,
+        discountNum,
+        couponValue.trim() ? couponValue.trim().toUpperCase() : "",
+        couponAmountNum,
+        lynkValue.trim()
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan tarif.");
     } finally {
@@ -566,6 +586,21 @@ function HourlyRateCard({
             className="w-32 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
           />
         </div>
+      </div>
+
+      <div className="mt-3">
+        <label className="mb-1 block text-xs font-medium text-slate-600">
+          Link Pembayaran Lynk.id (opsional — dipakai jika platform memakai gateway Lynk.id)
+        </label>
+        <input
+          value={lynkValue}
+          onChange={(e) => {
+            setLynkValue(e.target.value);
+            setSaved(false);
+          }}
+          placeholder="https://lynk.id/namamu/produk-konsultasi"
+          className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+        />
       </div>
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}

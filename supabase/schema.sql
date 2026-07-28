@@ -119,7 +119,10 @@ create table if not exists public.psychologist_profiles (
   -- Optional redeemable coupon on top of discount_percent: patient must type
   -- coupon_code at checkout to get coupon_discount_amount (Rp) off.
   coupon_code text,
-  coupon_discount_amount integer
+  coupon_discount_amount integer,
+  -- Lynk.id product payment link a Psikolog Profesional creates for their own
+  -- hourly consultation (used when payment_gateway = 'lynkid').
+  lynkid_url text
 );
 
 -- In case psychologist_profiles already existed from an earlier run of this file.
@@ -128,6 +131,7 @@ alter table public.psychologist_profiles add column if not exists hourly_rate in
 alter table public.psychologist_profiles add column if not exists discount_percent integer not null default 0;
 alter table public.psychologist_profiles add column if not exists coupon_code text;
 alter table public.psychologist_profiles add column if not exists coupon_discount_amount integer;
+alter table public.psychologist_profiles add column if not exists lynkid_url text;
 do $$ begin
   if not exists (
     select 1 from pg_constraint where conname = 'psychologist_profiles_category_check'
@@ -251,11 +255,15 @@ create table if not exists public.packages (
   -- Optional redeemable coupon: patient must type coupon_code at checkout to
   -- get coupon_discount_amount (Rp) off, on top of the price/original_price discount.
   coupon_code text,
-  coupon_discount_amount integer
+  coupon_discount_amount integer,
+  -- Lynk.id product payment link for this package (admin creates the product on
+  -- lynk.id manually — Lynk has no API to mint payment links programmatically).
+  lynkid_url text
 );
 
 alter table public.packages add column if not exists coupon_code text;
 alter table public.packages add column if not exists coupon_discount_amount integer;
+alter table public.packages add column if not exists lynkid_url text;
 
 create table if not exists public.banners (
   id uuid primary key default gen_random_uuid(),
@@ -458,7 +466,7 @@ create table if not exists public.site_settings (
   bank_name text,
   bank_account_number text,
   bank_account_holder text,
-  payment_gateway text not null default 'manual' check (payment_gateway in ('manual', 'midtrans')),
+  payment_gateway text not null default 'manual' check (payment_gateway in ('manual', 'midtrans', 'lynkid')),
   midtrans_client_key text,
   midtrans_is_production boolean not null default false,
   -- Flat platform fee (Rp) taken from every Teman Curhat package transaction; the rest is the psychologist's share.
@@ -478,14 +486,30 @@ alter table public.site_settings add column if not exists teman_curhat_admin_fee
 alter table public.site_settings add column if not exists profesional_admin_fee_percent integer not null default 10;
 alter table public.site_settings add column if not exists profesional_min_hourly_rate integer not null default 0;
 
+-- Older databases created the payment_gateway check before 'lynkid' existed —
+-- rebuild the constraint so the new option is accepted.
+do $$ begin
+  if exists (select 1 from pg_constraint where conname = 'site_settings_payment_gateway_check') then
+    alter table public.site_settings drop constraint site_settings_payment_gateway_check;
+  end if;
+  alter table public.site_settings
+    add constraint site_settings_payment_gateway_check
+    check (payment_gateway in ('manual', 'midtrans', 'lynkid'));
+end $$;
+
 -- Server-only secret storage. Deliberately has NO select/insert/update policies for
 -- anon or authenticated roles below — only the service_role key (used exclusively
 -- inside Netlify Functions, never shipped to the browser) can read or write this.
 create table if not exists public.payment_secrets (
   id int primary key default 1,
   midtrans_server_key text,
+  -- Lynk.id "Merchant Key" used to verify the X-Signature header on their
+  -- transaction-success webhook (see netlify/functions/lynk-webhook.ts).
+  lynkid_merchant_key text,
   constraint payment_secrets_single_row check (id = 1)
 );
+
+alter table public.payment_secrets add column if not exists lynkid_merchant_key text;
 
 -- ============================================================================
 -- ROW LEVEL SECURITY

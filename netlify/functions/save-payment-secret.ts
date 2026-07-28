@@ -18,29 +18,36 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod === "GET") {
     const { data } = await admin
       .from("payment_secrets")
-      .select("midtrans_server_key")
+      .select("midtrans_server_key, lynkid_merchant_key")
       .eq("id", 1)
       .maybeSingle();
-    return jsonResponse(200, { configured: !!data?.midtrans_server_key });
+    return jsonResponse(200, {
+      configured: !!data?.midtrans_server_key,
+      lynkidConfigured: !!data?.lynkid_merchant_key,
+    });
   }
 
   if (event.httpMethod === "POST") {
-    let body: { midtransServerKey?: string };
+    let body: { midtransServerKey?: string; lynkidMerchantKey?: string };
     try {
       body = JSON.parse(event.body || "{}");
     } catch {
       return jsonResponse(400, { error: "Body tidak valid." });
     }
 
-    const key = typeof body.midtransServerKey === "string" ? body.midtransServerKey.trim() : "";
-    if (!key) {
-      return jsonResponse(400, { error: "Server Key kosong." });
+    const midtransKey =
+      typeof body.midtransServerKey === "string" ? body.midtransServerKey.trim() : "";
+    const lynkidKey =
+      typeof body.lynkidMerchantKey === "string" ? body.lynkidMerchantKey.trim() : "";
+    if (!midtransKey && !lynkidKey) {
+      return jsonResponse(400, { error: "Key kosong." });
     }
 
-    const { error } = await admin
-      .from("payment_secrets")
-      .update({ midtrans_server_key: key })
-      .eq("id", 1);
+    const patch: Record<string, string> = {};
+    if (midtransKey) patch.midtrans_server_key = midtransKey;
+    if (lynkidKey) patch.lynkid_merchant_key = lynkidKey;
+
+    const { error } = await admin.from("payment_secrets").update(patch).eq("id", 1);
     if (error) return jsonResponse(500, { error: error.message });
 
     return jsonResponse(200, { ok: true });

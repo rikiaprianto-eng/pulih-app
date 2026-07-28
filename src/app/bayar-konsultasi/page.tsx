@@ -22,6 +22,8 @@ import {
   fetchSiteSettings,
   createDirectCheckout,
   createDirectMidtransTransaction,
+  createPendingLynkTransaction,
+  fetchTransactionStatus,
   effectiveHourlyRate,
   applyCoupon,
   SiteSettings,
@@ -60,8 +62,10 @@ export default function BayarKonsultasiPage() {
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [waitingLynk, setWaitingLynk] = useState(false);
 
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
+  const useLynkid = settings?.paymentGateway === "lynkid";
 
   useEffect(() => {
     const psyId = new URLSearchParams(window.location.search).get("psy");
@@ -119,6 +123,36 @@ export default function BayarKonsultasiPage() {
     }
     setPayError(null);
     setProcessing(true);
+
+    if (useLynkid) {
+      if (!psy.lynkidUrl) {
+        setPayError("Psikolog ini belum mengatur link pembayaran Lynk.id.");
+        setProcessing(false);
+        return;
+      }
+      try {
+        const txId = await createPendingLynkTransaction(profile.id, {
+          psychologistId: psy.id,
+          amount: finalRate,
+        });
+        window.open(psy.lynkidUrl, "_blank", "noopener,noreferrer");
+        setWaitingLynk(true);
+        setProcessing(false);
+        const poll = setInterval(async () => {
+          const status = await fetchTransactionStatus(txId);
+          if (status === "paid") {
+            clearInterval(poll);
+            setWaitingLynk(false);
+            setPaidTransactionId(txId);
+            setStep("success");
+          }
+        }, 4000);
+      } catch {
+        setPayError("Gagal menyiapkan pembayaran Lynk.id. Coba lagi.");
+        setProcessing(false);
+      }
+      return;
+    }
 
     if (useMidtrans) {
       try {
@@ -208,7 +242,29 @@ export default function BayarKonsultasiPage() {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
                 <div className="lg:col-span-3">
                   <div className="rounded-2xl border border-slate-100 bg-white p-6">
-                    {useMidtrans ? (
+                    {useLynkid ? (
+                      <>
+                        <h2 className="font-heading text-base font-semibold text-slate-900">
+                          Pembayaran via Lynk.id
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Klik &ldquo;Bayar Sekarang&rdquo; — halaman pembayaran Lynk.id akan
+                          terbuka di tab baru. Setelah pembayaran selesai, halaman ini otomatis
+                          mendeteksi dan sesi konsultasimu langsung siap dimulai.
+                        </p>
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
+                          Penting: saat mengisi data pembeli di Lynk.id, gunakan email yang sama
+                          dengan akun Pulih-mu ({profile?.email ?? "email akunmu"}) supaya
+                          pembayaran otomatis terhubung.
+                        </div>
+                        {waitingLynk && (
+                          <div className="mt-4 flex items-center gap-2 rounded-2xl bg-teal-50 p-4 text-sm text-teal-700">
+                            <Loader2 size={16} className="animate-spin" />
+                            Menunggu konfirmasi pembayaran dari Lynk.id...
+                          </div>
+                        )}
+                      </>
+                    ) : useMidtrans ? (
                       <>
                         <h2 className="font-heading text-base font-semibold text-slate-900">
                           Pembayaran Otomatis
@@ -363,11 +419,15 @@ export default function BayarKonsultasiPage() {
                     {payError && <p className="mt-4 text-center text-sm text-red-600">{payError}</p>}
                     <button
                       onClick={pay}
-                      disabled={processing}
+                      disabled={processing || waitingLynk}
                       className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white disabled:opacity-70"
                     >
-                      {processing && <Loader2 size={16} className="animate-spin" />}
-                      {processing ? "Memproses pembayaran..." : "Bayar Sekarang"}
+                      {(processing || waitingLynk) && <Loader2 size={16} className="animate-spin" />}
+                      {waitingLynk
+                        ? "Menunggu pembayaran Lynk.id..."
+                        : processing
+                          ? "Memproses pembayaran..."
+                          : "Bayar Sekarang"}
                     </button>
                     <p className="mt-3 text-center text-[11px] text-slate-400">
                       {!profile

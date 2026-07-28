@@ -45,6 +45,7 @@ type PsychologistRow = {
     discount_percent: number | null;
     coupon_code: string | null;
     coupon_discount_amount: number | null;
+    lynkid_url: string | null;
     psychologist_specializations: { specializations: { name: string } | null }[];
   } | null;
 };
@@ -57,7 +58,7 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -89,6 +90,7 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
       discountPercent: pp?.discount_percent ?? 0,
       couponCode: pp?.coupon_code ?? null,
       couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
+      lynkidUrl: pp?.lynkid_url ?? null,
     };
   });
 }
@@ -100,7 +102,7 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -130,6 +132,7 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     discountPercent: pp?.discount_percent ?? 0,
     couponCode: pp?.coupon_code ?? null,
     couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
+    lynkidUrl: pp?.lynkid_url ?? null,
   };
 }
 
@@ -152,6 +155,7 @@ export async function fetchPackages(): Promise<Package[]> {
     badge: p.badge ?? undefined,
     couponCode: p.coupon_code ?? undefined,
     couponDiscountAmount: p.coupon_discount_amount ?? undefined,
+    lynkidUrl: p.lynkid_url ?? undefined,
   }));
 }
 
@@ -383,6 +387,58 @@ export async function createDirectCheckout(
   return tx.id;
 }
 
+/**
+ * Creates the pending half of a Lynk.id checkout. The patient is then sent to the
+ * pre-made Lynk.id product page; lynk-webhook.ts flips this transaction to 'paid'
+ * (matched by the buyer's email) once Lynk.id reports the payment succeeded.
+ */
+export async function createPendingLynkTransaction(
+  patientId: string,
+  fields: { packageId?: string; psychologistId?: string; amount: number }
+): Promise<string> {
+  const { data: settings } = await supabase
+    .from("site_settings")
+    .select("teman_curhat_admin_fee, profesional_admin_fee_percent")
+    .eq("id", 1)
+    .maybeSingle();
+
+  const { adminFeeAmount, psychologistShareAmount } = fields.packageId
+    ? splitTemanCurhatRevenue(
+        fields.amount,
+        settings?.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee
+      )
+    : splitProfesionalRevenue(
+        fields.amount,
+        settings?.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent
+      );
+
+  const { data: tx, error } = await supabase
+    .from("transactions")
+    .insert({
+      patient_id: patientId,
+      package_id: fields.packageId ?? null,
+      psychologist_id: fields.psychologistId ?? null,
+      amount: fields.amount,
+      payment_method: "Lynk.id",
+      status: "pending",
+      admin_fee_amount: adminFeeAmount,
+      psychologist_share_amount: psychologistShareAmount,
+    })
+    .select()
+    .single();
+  if (error || !tx) throw error;
+  return tx.id;
+}
+
+export async function fetchTransactionStatus(transactionId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("transactions")
+    .select("status")
+    .eq("id", transactionId)
+    .maybeSingle();
+  return data?.status ?? null;
+}
+
 export type StartSessionResult =
   | { ok: true; sessionId: string; durationMinutes: number }
   | { ok: false; reason: "no_quota" | "invalid_transaction" };
@@ -518,7 +574,8 @@ export async function updateProfessionalPricing(
   hourlyRate: number,
   discountPercent: number,
   couponCode: string,
-  couponDiscountAmount: number
+  couponDiscountAmount: number,
+  lynkidUrl: string = ""
 ) {
   const { error } = await supabase
     .from("psychologist_profiles")
@@ -527,6 +584,7 @@ export async function updateProfessionalPricing(
       discount_percent: discountPercent,
       coupon_code: couponCode.trim() ? couponCode.trim().toUpperCase() : null,
       coupon_discount_amount: couponDiscountAmount || null,
+      lynkid_url: lynkidUrl.trim() || null,
     })
     .eq("id", psychologistId);
   if (error) throw error;
@@ -554,10 +612,11 @@ export async function fetchMyPricing(psychologistId: string): Promise<{
   discountPercent: number;
   couponCode: string;
   couponDiscountAmount: number;
+  lynkidUrl: string;
 }> {
   const { data } = await supabase
     .from("psychologist_profiles")
-    .select("hourly_rate, discount_percent, coupon_code, coupon_discount_amount")
+    .select("hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url")
     .eq("id", psychologistId)
     .maybeSingle();
   return {
@@ -565,6 +624,7 @@ export async function fetchMyPricing(psychologistId: string): Promise<{
     discountPercent: data?.discount_percent ?? 0,
     couponCode: data?.coupon_code ?? "",
     couponDiscountAmount: data?.coupon_discount_amount ?? 0,
+    lynkidUrl: data?.lynkid_url ?? "",
   };
 }
 
@@ -881,6 +941,7 @@ export async function updatePackage(id: string, fields: Partial<Package>) {
       badge: fields.badge ?? null,
       coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
       coupon_discount_amount: fields.couponDiscountAmount || null,
+      lynkid_url: fields.lynkidUrl?.trim() || null,
     })
     .eq("id", id);
 }
@@ -896,6 +957,7 @@ export async function createPackage(fields: Omit<Package, "id">) {
     badge: fields.badge ?? null,
     coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
     coupon_discount_amount: fields.couponDiscountAmount || null,
+    lynkid_url: fields.lynkidUrl?.trim() || null,
   });
 }
 
@@ -1015,7 +1077,7 @@ export type SiteSettings = {
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
-  paymentGateway: "manual" | "midtrans";
+  paymentGateway: "manual" | "midtrans" | "lynkid";
   midtransClientKey: string;
   midtransIsProduction: boolean;
   temanCurhatAdminFee: number;
@@ -1050,7 +1112,12 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
     bankName: data.bank_name ?? "",
     bankAccountNumber: data.bank_account_number ?? "",
     bankAccountHolder: data.bank_account_holder ?? "",
-    paymentGateway: data.payment_gateway === "midtrans" ? "midtrans" : "manual",
+    paymentGateway:
+      data.payment_gateway === "midtrans"
+        ? "midtrans"
+        : data.payment_gateway === "lynkid"
+          ? "lynkid"
+          : "manual",
     midtransClientKey: data.midtrans_client_key ?? "",
     midtransIsProduction: !!data.midtrans_is_production,
     temanCurhatAdminFee: data.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee,
@@ -1153,6 +1220,26 @@ export async function saveMidtransServerKey(serverKey: string) {
   }
 }
 
+export async function saveLynkidMerchantKey(merchantKey: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("Belum login.");
+
+  const res = await fetch("/.netlify/functions/save-payment-secret", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ lynkidMerchantKey: merchantKey }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Gagal menyimpan Merchant Key.");
+  }
+}
+
 export async function createMidtransTransaction(
   packageId: string,
   couponCode: string = ""
@@ -1198,17 +1285,21 @@ export async function createDirectMidtransTransaction(
   return body;
 }
 
-export async function fetchPaymentSecretStatus(): Promise<{ configured: boolean }> {
+export async function fetchPaymentSecretStatus(): Promise<{
+  configured: boolean;
+  lynkidConfigured: boolean;
+}> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session) return { configured: false };
+  if (!session) return { configured: false, lynkidConfigured: false };
 
   const res = await fetch("/.netlify/functions/save-payment-secret", {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
-  if (!res.ok) return { configured: false };
-  return res.json();
+  if (!res.ok) return { configured: false, lynkidConfigured: false };
+  const body = await res.json();
+  return { configured: !!body.configured, lynkidConfigured: !!body.lynkidConfigured };
 }
 
 // ---------------------------------------------------------------------------

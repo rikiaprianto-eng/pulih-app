@@ -21,6 +21,8 @@ import {
   createCheckout,
   fetchSiteSettings,
   createMidtransTransaction,
+  createPendingLynkTransaction,
+  fetchTransactionStatus,
   applyCoupon,
   SiteSettings,
 } from "@/lib/queries";
@@ -60,8 +62,10 @@ export default function PricingPage() {
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [waitingLynk, setWaitingLynk] = useState(false);
 
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
+  const useLynkid = settings?.paymentGateway === "lynkid";
   const finalPrice = selectedPkg
     ? applyCoupon(selectedPkg.price, appliedCoupon ?? "", selectedPkg.couponCode, selectedPkg.couponDiscountAmount)
     : 0;
@@ -138,6 +142,35 @@ export default function PricingPage() {
     }
     setPayError(null);
     setProcessing(true);
+
+    if (useLynkid) {
+      if (!selectedPkg.lynkidUrl) {
+        setPayError("Link pembayaran Lynk.id untuk paket ini belum diatur admin.");
+        setProcessing(false);
+        return;
+      }
+      try {
+        const txId = await createPendingLynkTransaction(profile.id, {
+          packageId: selectedPkg.id,
+          amount: finalPrice,
+        });
+        window.open(selectedPkg.lynkidUrl, "_blank", "noopener,noreferrer");
+        setWaitingLynk(true);
+        setProcessing(false);
+        const poll = setInterval(async () => {
+          const status = await fetchTransactionStatus(txId);
+          if (status === "paid") {
+            clearInterval(poll);
+            setWaitingLynk(false);
+            setStep("success");
+          }
+        }, 4000);
+      } catch {
+        setPayError("Gagal menyiapkan pembayaran Lynk.id. Coba lagi.");
+        setProcessing(false);
+      }
+      return;
+    }
 
     if (useMidtrans) {
       try {
@@ -270,7 +303,30 @@ export default function PricingPage() {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
                 <div className="lg:col-span-3">
                   <div className="rounded-2xl border border-slate-100 bg-white p-6">
-                    {useMidtrans ? (
+                    {useLynkid ? (
+                      <>
+                        <h2 className="font-heading text-base font-semibold text-slate-900">
+                          Pembayaran via Lynk.id
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Klik &ldquo;Bayar Sekarang&rdquo; — halaman pembayaran Lynk.id akan
+                          terbuka di tab baru dengan pilihan QRIS, Virtual Account, dan e-Wallet.
+                          Setelah pembayaran selesai, halaman ini otomatis mendeteksi dan
+                          mengaktifkan paketmu.
+                        </p>
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
+                          Penting: saat mengisi data pembeli di Lynk.id, gunakan email yang sama
+                          dengan akun Pulih-mu ({profile?.email ?? "email akunmu"}) supaya
+                          pembayaran otomatis terhubung.
+                        </div>
+                        {waitingLynk && (
+                          <div className="mt-4 flex items-center gap-2 rounded-2xl bg-teal-50 p-4 text-sm text-teal-700">
+                            <Loader2 size={16} className="animate-spin" />
+                            Menunggu konfirmasi pembayaran dari Lynk.id...
+                          </div>
+                        )}
+                      </>
+                    ) : useMidtrans ? (
                       <>
                         <h2 className="font-heading text-base font-semibold text-slate-900">
                           Pembayaran Otomatis
@@ -422,18 +478,24 @@ export default function PricingPage() {
                     )}
                     <button
                       onClick={pay}
-                      disabled={processing}
+                      disabled={processing || waitingLynk}
                       className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white disabled:opacity-70"
                     >
-                      {processing && <Loader2 size={16} className="animate-spin" />}
-                      {processing ? "Memproses pembayaran..." : "Bayar Sekarang"}
+                      {(processing || waitingLynk) && <Loader2 size={16} className="animate-spin" />}
+                      {waitingLynk
+                        ? "Menunggu pembayaran Lynk.id..."
+                        : processing
+                          ? "Memproses pembayaran..."
+                          : "Bayar Sekarang"}
                     </button>
                     <p className="mt-3 text-center text-[11px] text-slate-400">
                       {!profile
                         ? "Kamu akan diminta masuk terlebih dahulu sebelum membayar."
-                        : useMidtrans
-                          ? "Pembayaran diproses aman lewat Midtrans — transaksi & langgananmu langsung tersimpan."
-                          : "Gratis tanpa biaya tambahan — pembayaran terkonfirmasi otomatis dan langgananmu langsung aktif."}
+                        : useLynkid
+                          ? "Pembayaran diproses aman lewat Lynk.id — status terkonfirmasi otomatis via webhook."
+                          : useMidtrans
+                            ? "Pembayaran diproses aman lewat Midtrans — transaksi & langgananmu langsung tersimpan."
+                            : "Gratis tanpa biaya tambahan — pembayaran terkonfirmasi otomatis dan langgananmu langsung aktif."}
                     </p>
                   </div>
                 </div>

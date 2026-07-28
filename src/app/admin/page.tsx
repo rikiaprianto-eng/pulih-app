@@ -43,6 +43,7 @@ import {
   updateSiteSettings,
   fetchPaymentSecretStatus,
   saveMidtransServerKey,
+  saveLynkidMerchantKey,
   uploadBannerImage,
   verifyPayment,
   updatePackage,
@@ -129,6 +130,7 @@ export default function AdminPage() {
   const [updatingVerifyId, setUpdatingVerifyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [secretConfigured, setSecretConfigured] = useState(false);
+  const [lynkidConfigured, setLynkidConfigured] = useState(false);
   const [requirements, setRequirements] = useState<VerificationRequirement[]>([]);
   const [submissions, setSubmissions] = useState<Record<string, SubmissionAnswer[]>>({});
   const [addingRequirement, setAddingRequirement] = useState(false);
@@ -164,6 +166,7 @@ export default function AdminPage() {
       setFacilities(fac);
       setSettings(settingsData);
       setSecretConfigured(secretStatus.configured);
+      setLynkidConfigured(secretStatus.lynkidConfigured);
       setRequirements(reqs);
       setSubmissions(subs);
       setLoading(false);
@@ -315,6 +318,11 @@ export default function AdminPage() {
   async function handleSaveServerKey(key: string) {
     await saveMidtransServerKey(key);
     setSecretConfigured(true);
+  }
+
+  async function handleSaveLynkidKey(key: string) {
+    await saveLynkidMerchantKey(key);
+    setLynkidConfigured(true);
   }
 
   if (authLoading || !profile) {
@@ -882,8 +890,10 @@ export default function AdminPage() {
                 <SettingsTab
                   settings={settings}
                   secretConfigured={secretConfigured}
+                  lynkidConfigured={lynkidConfigured}
                   onSaveSettings={handleSaveSettings}
                   onSaveServerKey={handleSaveServerKey}
+                  onSaveLynkidKey={handleSaveLynkidKey}
                 />
               )}
             </>
@@ -1081,6 +1091,7 @@ function EditPackageModal({
     ...pkg,
     couponCode: pkg.couponCode ?? "",
     couponDiscountAmount: pkg.couponDiscountAmount ?? 0,
+    lynkidUrl: pkg.lynkidUrl ?? "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -1132,6 +1143,11 @@ function EditPackageModal({
         value={String(form.couponDiscountAmount)}
         onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
       />
+      <Field
+        label="Link Pembayaran Lynk.id (utk gateway Lynk.id)"
+        value={form.lynkidUrl}
+        onChange={(v) => setForm({ ...form, lynkidUrl: v })}
+      />
     </ModalShell>
   );
 }
@@ -1153,6 +1169,7 @@ function AddPackageModal({
     price: 0,
     couponCode: "",
     couponDiscountAmount: 0,
+    lynkidUrl: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -1210,6 +1227,11 @@ function AddPackageModal({
         type="number"
         value={String(form.couponDiscountAmount ?? 0)}
         onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
+      />
+      <Field
+        label="Link Pembayaran Lynk.id (utk gateway Lynk.id)"
+        value={form.lynkidUrl ?? ""}
+        onChange={(v) => setForm({ ...form, lynkidUrl: v })}
       />
     </ModalShell>
   );
@@ -1694,13 +1716,17 @@ function SettingsCard({ title, children }: { title: string; children: React.Reac
 function SettingsTab({
   settings,
   secretConfigured,
+  lynkidConfigured,
   onSaveSettings,
   onSaveServerKey,
+  onSaveLynkidKey,
 }: {
   settings: SiteSettings;
   secretConfigured: boolean;
+  lynkidConfigured: boolean;
   onSaveSettings: (s: SiteSettings) => Promise<void>;
   onSaveServerKey: (key: string) => Promise<void>;
+  onSaveLynkidKey: (key: string) => Promise<void>;
 }) {
   const [form, setForm] = useState(settings);
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -1713,6 +1739,9 @@ function SettingsTab({
   const [serverKeyInput, setServerKeyInput] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
+  const [lynkKeyInput, setLynkKeyInput] = useState("");
+  const [savingLynkKey, setSavingLynkKey] = useState(false);
+  const [lynkKeyError, setLynkKeyError] = useState<string | null>(null);
 
   function flashSaved(section: string) {
     setSavedFlag(section);
@@ -1860,17 +1889,23 @@ function SettingsTab({
             <select
               value={form.paymentGateway}
               onChange={(e) =>
-                setForm({ ...form, paymentGateway: e.target.value as "manual" | "midtrans" })
+                setForm({
+                  ...form,
+                  paymentGateway: e.target.value as "manual" | "midtrans" | "lynkid",
+                })
               }
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
             >
               <option value="manual">Transfer Otomatis Pulih (gratis, auto-approve, tanpa akun pihak ketiga)</option>
               <option value="midtrans">Midtrans (auto-approve, perlu akun Midtrans)</option>
+              <option value="lynkid">Lynk.id (auto-approve via webhook, perlu akun Lynk.id)</option>
             </select>
             <p className="mt-1.5 text-xs text-slate-500">
               {form.paymentGateway === "manual"
                 ? "Aktif sekarang: setiap transaksi langsung berstatus lunas begitu pasien klik \"Bayar Sekarang\" — tidak perlu Server/Client Key, tidak ada biaya transaksi, dan tidak perlu verifikasi manual dari admin."
-                : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
+                : form.paymentGateway === "lynkid"
+                  ? "Buat produk di Lynk.id untuk tiap paket lalu tempel link-nya di Manajemen Harga. Isi Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
+                  : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
             </p>
           </div>
           <Field
@@ -1946,6 +1981,56 @@ function SettingsTab({
             {savingKey && <Loader2 size={13} className="animate-spin" />}
             {savedFlag === "key" ? <Check size={13} /> : null}
             Simpan Server Key
+          </button>
+        </SettingsCard>
+
+        <SettingsCard title="Lynk.id Merchant Key (Rahasia)">
+          <div
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${
+              lynkidConfigured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            <ShieldCheck size={14} />
+            {lynkidConfigured ? "Merchant Key sudah diatur" : "Merchant Key belum diatur"}
+          </div>
+          <p className="text-xs text-slate-500">
+            Dipakai untuk memverifikasi webhook transaksi sukses dari Lynk.id. Atur webhook di
+            dashboard Lynk.id (Pengaturan &rarr; Integrasi &rarr; Webhook) ke URL:
+          </p>
+          <code className="block break-all rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+            https://pulih-app.netlify.app/.netlify/functions/lynk-webhook
+          </code>
+          <Field
+            label="Merchant Key baru"
+            type="password"
+            value={lynkKeyInput}
+            onChange={setLynkKeyInput}
+          />
+          {lynkKeyError && <p className="text-xs text-red-600">{lynkKeyError}</p>}
+          <button
+            onClick={async () => {
+              if (!lynkKeyInput.trim()) {
+                setLynkKeyError("Merchant Key tidak boleh kosong.");
+                return;
+              }
+              setLynkKeyError(null);
+              setSavingLynkKey(true);
+              try {
+                await onSaveLynkidKey(lynkKeyInput.trim());
+                setLynkKeyInput("");
+                flashSaved("lynkkey");
+              } catch (err) {
+                setLynkKeyError(err instanceof Error ? err.message : "Gagal menyimpan.");
+              } finally {
+                setSavingLynkKey(false);
+              }
+            }}
+            disabled={savingLynkKey}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
+          >
+            {savingLynkKey && <Loader2 size={13} className="animate-spin" />}
+            {savedFlag === "lynkkey" ? <Check size={13} /> : null}
+            Simpan Merchant Key
           </button>
         </SettingsCard>
       </div>

@@ -30,6 +30,7 @@ export type Psychologist = {
   discountPercent: number;
   couponCode: string | null;
   couponDiscountAmount: number;
+  lynkidUrl: string | null;
 };
 
 export type Package = {
@@ -44,6 +45,7 @@ export type Package = {
   badge?: string;
   couponCode?: string;
   couponDiscountAmount?: number;
+  lynkidUrl?: string;
 };
 
 export type PaymentMethod = {
