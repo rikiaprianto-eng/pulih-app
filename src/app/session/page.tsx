@@ -13,10 +13,13 @@ import {
   X,
   FastForward,
   Star,
+  Loader2,
+  CameraOff,
 } from "lucide-react";
 import { avatarUrl } from "@/lib/utils";
 import { useRequireAuth } from "@/lib/useAuth";
 import { startSession, endSession, extendSession } from "@/lib/queries";
+import { useCallRoom, notifyIncomingCall } from "@/lib/useCallRoom";
 
 const START_SECONDS = 45 * 60;
 const WARNING_THRESHOLD = 10 * 60;
@@ -30,8 +33,6 @@ export default function SessionPage() {
   const [psyName, setPsyName] = useState("Psikolog Pulih");
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(START_SECONDS);
-  const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -44,6 +45,10 @@ export default function SessionPage() {
   ]);
   const [draft, setDraft] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  const call = useCallRoom(dbSessionId, true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -55,9 +60,28 @@ export default function SessionPage() {
 
   useEffect(() => {
     if (!profile || !psyId || dbSessionId) return;
-    startSession(profile.id, psyId).then((row) => setDbSessionId(row.id));
+    startSession(profile.id, psyId).then((row) => {
+      setDbSessionId(row.id);
+      notifyIncomingCall(psyId, {
+        sessionId: row.id,
+        patientId: profile.id,
+        patientName: profile.full_name ?? "Pasien Pulih",
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, psyId]);
+
+  useEffect(() => {
+    if (localVideoRef.current) localVideoRef.current.srcObject = call.localStream;
+  }, [call.localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = call.remoteStream;
+  }, [call.remoteStream]);
+
+  useEffect(() => {
+    if (call.status === "ended") setEnded(true);
+  }, [call.status]);
 
   useEffect(() => {
     if (ended) return;
@@ -175,17 +199,38 @@ export default function SessionPage() {
     <div className="relative flex h-screen flex-col bg-slate-950 text-white">
       {/* Main video area */}
       <div className="relative flex-1 overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-          <div className="flex flex-col items-center">
-            <img
-              src={avatarUrl(psyName)}
-              alt={psyName}
-              className="h-32 w-32 rounded-full ring-4 ring-white/10"
-            />
-            <p className="mt-4 font-heading text-lg font-semibold">{psyName}</p>
-            <p className="text-sm text-white/50">Psikolog Klinis</p>
+        {call.status === "connected" ? (
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+            <div className="flex flex-col items-center px-4 text-center">
+              <img
+                src={avatarUrl(psyName)}
+                alt={psyName}
+                className="h-32 w-32 rounded-full ring-4 ring-white/10"
+              />
+              <p className="mt-4 font-heading text-lg font-semibold">{psyName}</p>
+              {call.status === "media-error" ? (
+                <p className="mt-2 max-w-xs text-sm text-orange-300">
+                  Tidak bisa mengakses kamera/mikrofon. Izinkan akses di pengaturan browser lalu
+                  muat ulang halaman.
+                </p>
+              ) : (
+                <p className="mt-2 flex items-center gap-2 text-sm text-white/60">
+                  <Loader2 size={14} className="animate-spin" />
+                  {call.status === "requesting-media"
+                    ? "Menyiapkan kamera & mikrofon..."
+                    : "Menunggu psikolog bergabung..."}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Top bar */}
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
@@ -212,11 +257,13 @@ export default function SessionPage() {
 
         {/* Self view */}
         <div className="absolute bottom-24 right-4 z-10 flex h-32 w-24 items-center justify-center overflow-hidden rounded-xl bg-slate-800 shadow-lg ring-1 ring-white/10 sm:h-40 sm:w-32">
-          {camOn ? (
-            <img
-              src={avatarUrl("Kamu")}
-              alt="Kamu"
-              className="h-full w-full object-cover"
+          {call.localStream && call.camOn ? (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="h-full w-full scale-x-[-1] object-cover"
             />
           ) : (
             <VideoOff size={20} className="text-white/40" />
@@ -300,17 +347,20 @@ export default function SessionPage() {
 
       {/* Controls */}
       <div className="z-10 flex items-center justify-center gap-3 bg-slate-900/80 py-4 backdrop-blur">
-        <ControlButton active={micOn} onClick={() => setMicOn((v) => !v)}>
-          {micOn ? <Mic size={20} /> : <MicOff size={20} />}
+        <ControlButton active={call.micOn} onClick={call.toggleMic}>
+          {call.micOn ? <Mic size={20} /> : <MicOff size={20} />}
         </ControlButton>
-        <ControlButton active={camOn} onClick={() => setCamOn((v) => !v)}>
-          {camOn ? <VideoIcon size={20} /> : <VideoOff size={20} />}
+        <ControlButton active={call.camOn} onClick={call.toggleCam}>
+          {call.camOn ? <VideoIcon size={20} /> : <CameraOff size={20} />}
         </ControlButton>
         <ControlButton active={chatOpen} onClick={() => setChatOpen((v) => !v)}>
           <MessageCircle size={20} />
         </ControlButton>
         <button
-          onClick={() => setEnded(true)}
+          onClick={() => {
+            call.hangup();
+            setEnded(true);
+          }}
           className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white transition hover:bg-red-700"
           aria-label="Akhiri Sesi"
         >

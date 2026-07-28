@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   Users,
@@ -14,9 +15,13 @@ import {
   Clock,
   ShieldAlert,
   PenLine,
+  PhoneCall,
+  PhoneOff,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { useRequireAuth } from "@/lib/useAuth";
+import { supabase } from "@/lib/supabase/client";
+import { IncomingCall } from "@/lib/useCallRoom";
 import {
   fetchTodaySchedule,
   fetchMyPatients,
@@ -50,8 +55,10 @@ const scheduleStatusStyle: Record<string, string> = {
 };
 
 export default function PsikologPage() {
+  const router = useRouter();
   const { profile, loading: authLoading } = useRequireAuth(["psychologist"]);
   const [online, setOnline] = useState(true);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [openRecord, setOpenRecord] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<AppointmentView[]>([]);
   const [patients, setPatients] = useState<PatientRecordView[]>([]);
@@ -68,6 +75,20 @@ export default function PsikologPage() {
     if (!profile) return;
     reloadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const channel = supabase.channel(`incoming:${profile.id}`, {
+      config: { broadcast: { self: false } },
+    });
+    channel.on("broadcast", { event: "incoming_call" }, ({ payload }: { payload: IncomingCall }) => {
+      setIncomingCall(payload);
+    });
+    channel.subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
   }, [profile]);
 
   function reloadAll() {
@@ -117,6 +138,40 @@ export default function PsikologPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <AppHeader navItems={navItems} />
+
+      {incomingCall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-7 text-center shadow-2xl">
+            <div className="mx-auto flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-teal-50 text-teal-600">
+              <PhoneCall size={24} />
+            </div>
+            <h3 className="mt-4 font-heading text-lg font-bold text-slate-900">
+              Panggilan Masuk
+            </h3>
+            <p className="mt-1.5 text-sm text-slate-500">
+              {incomingCall.patientName} sedang menunggu untuk memulai sesi konseling denganmu.
+            </p>
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => setIncomingCall(null)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-100 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+              >
+                <PhoneOff size={16} /> Tolak
+              </button>
+              <button
+                onClick={() =>
+                  router.push(
+                    `/psikolog/sesi?sessionId=${incomingCall.sessionId}&patientId=${incomingCall.patientId}&patientName=${encodeURIComponent(incomingCall.patientName)}`
+                  )
+                }
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white"
+              >
+                <PhoneCall size={16} /> Terima
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
