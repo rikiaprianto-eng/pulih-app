@@ -57,6 +57,13 @@ export const paymentMethods: PaymentMethod[] = [
   { id: "dana", category: "ewallet", name: "DANA" },
 ];
 
+export type Facility = {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+};
+
 export type EventItem = {
   id: string;
   title: string;

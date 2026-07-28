@@ -220,6 +220,17 @@ create table if not exists public.event_registrations (
   unique (event_id, patient_id)
 );
 
+-- Explanatory feature cards on the landing page (e.g. "Teman Curhat" vs
+-- "Psikolog Profesional"), managed like Manajemen Event but capped at 10.
+create table if not exists public.facilities (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  image_url text,
+  sort_order integer not null default 0,
+  is_active boolean not null default true
+);
+
 -- ----------------------------------------------------------------------------
 -- 4. TRANSACTIONS, SUBSCRIPTIONS, SESSIONS, MEDICAL RECORDS, REVIEWS
 -- ----------------------------------------------------------------------------
@@ -325,6 +336,7 @@ alter table public.psychologist_submissions enable row level security;
 alter table public.packages enable row level security;
 alter table public.banners enable row level security;
 alter table public.events enable row level security;
+alter table public.facilities enable row level security;
 alter table public.event_registrations enable row level security;
 alter table public.transactions enable row level security;
 alter table public.user_subscriptions enable row level security;
@@ -357,6 +369,9 @@ create policy "public read banners" on public.banners for select using (true);
 
 drop policy if exists "public read events" on public.events;
 create policy "public read events" on public.events for select using (true);
+
+drop policy if exists "public read facilities" on public.facilities;
+create policy "public read facilities" on public.facilities for select using (true);
 
 -- Profiles: users manage their own row; admins manage all.
 drop policy if exists "update own profile" on public.profiles;
@@ -417,6 +432,13 @@ drop policy if exists "admin updates events" on public.events;
 create policy "admin updates events" on public.events for update using (public.is_admin());
 drop policy if exists "admin deletes events" on public.events;
 create policy "admin deletes events" on public.events for delete using (public.is_admin());
+
+drop policy if exists "admin writes facilities" on public.facilities;
+create policy "admin writes facilities" on public.facilities for insert with check (public.is_admin());
+drop policy if exists "admin updates facilities" on public.facilities;
+create policy "admin updates facilities" on public.facilities for update using (public.is_admin());
+drop policy if exists "admin deletes facilities" on public.facilities;
+create policy "admin deletes facilities" on public.facilities for delete using (public.is_admin());
 
 -- Site settings: public read (footer/contact info shown to everyone), admin write.
 drop policy if exists "public read site_settings" on public.site_settings;
@@ -504,6 +526,11 @@ insert into public.events (id, title, event_type, speaker_name, event_date, quot
   ('00000000-0000-4000-8000-000000000201', 'Mengelola Kecemasan di Tempat Kerja', 'Webinar', 'Dedi Kurniawan, M.Psi.', '2026-08-05 19:00:00+07', 42),
   ('00000000-0000-4000-8000-000000000202', 'Self Love Journey: Support Group', 'Support Group', 'Eka Putri, M.Psi.', '2026-08-12 16:00:00+07', 15),
   ('00000000-0000-4000-8000-000000000203', 'Parenting untuk Generasi Digital', 'Webinar', 'Fajar Nugraha, M.Psi.', '2026-08-20 19:30:00+07', 60)
+on conflict (id) do nothing;
+
+insert into public.facilities (id, title, description, image_url, sort_order) values
+  ('00000000-0000-4000-8000-000000000301', 'Teman Curhat', 'Pendamping sebaya (min. S1) untuk ngobrol santai tentang keresahan sehari-hari. Tarif mengikuti paket harga yang berlaku.', 'https://picsum.photos/seed/pulih-fasilitas-teman-curhat/800/600', 1),
+  ('00000000-0000-4000-8000-000000000302', 'Psikolog Profesional', 'Psikolog berlisensi (min. S2) yang menentukan tarif konsultasi per jam sendiri. Bayar langsung sesuai tarifnya, mulai sesi seketika.', 'https://picsum.photos/seed/pulih-fasilitas-psikolog-profesional/800/600', 2)
 on conflict (id) do nothing;
 
 insert into public.site_settings (id) values (1) on conflict (id) do nothing;

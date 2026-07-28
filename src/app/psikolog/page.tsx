@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -21,7 +21,7 @@ import {
 import AppHeader from "@/components/AppHeader";
 import { useRequireAuth } from "@/lib/useAuth";
 import { supabase } from "@/lib/supabase/client";
-import { IncomingCall } from "@/lib/useCallRoom";
+import { IncomingCall, rejectIncomingCall } from "@/lib/useCallRoom";
 import {
   fetchTodaySchedule,
   fetchMyPatients,
@@ -33,6 +33,8 @@ import {
   fetchMyCategory,
   fetchMyHourlyRate,
   updateHourlyRate,
+  fetchIncomingSession,
+  endSession,
   submitTextAnswer,
   submitPhotoAnswer,
   addMedicalRecord,
@@ -59,6 +61,7 @@ export default function PsikologPage() {
   const { profile, loading: authLoading } = useRequireAuth(["psychologist"]);
   const [online, setOnline] = useState(true);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const dismissedCallsRef = useRef<Set<string>>(new Set());
   const [openRecord, setOpenRecord] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<AppointmentView[]>([]);
   const [patients, setPatients] = useState<PatientRecordView[]>([]);
@@ -77,19 +80,56 @@ export default function PsikologPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
+  // Incoming calls are surfaced two ways: an instant broadcast ping for when this
+  // dashboard is already open, and a DB poll fallback that catches calls started
+  // before the psychologist opened the page (broadcasts aren't queued/replayed).
   useEffect(() => {
     if (!profile) return;
+
+    function offer(call: IncomingCall) {
+      if (dismissedCallsRef.current.has(call.sessionId)) return;
+      setIncomingCall((prev) => (prev?.sessionId === call.sessionId ? prev : call));
+    }
+
     const channel = supabase.channel(`incoming:${profile.id}`, {
       config: { broadcast: { self: false } },
     });
     channel.on("broadcast", { event: "incoming_call" }, ({ payload }: { payload: IncomingCall }) => {
-      setIncomingCall(payload);
+      offer(payload);
     });
     channel.subscribe();
+
+    let cancelled = false;
+    async function poll() {
+      const found = await fetchIncomingSession(profile!.id);
+      if (found && !cancelled) offer(found);
+    }
+    poll();
+    const interval = setInterval(poll, 4000);
+
     return () => {
+      cancelled = true;
       channel.unsubscribe();
+      clearInterval(interval);
     };
   }, [profile]);
+
+  function handleRejectCall() {
+    if (incomingCall) {
+      dismissedCallsRef.current.add(incomingCall.sessionId);
+      rejectIncomingCall(incomingCall.sessionId);
+      endSession(incomingCall.sessionId, "completed");
+    }
+    setIncomingCall(null);
+  }
+
+  function handleAcceptCall() {
+    if (!incomingCall) return;
+    dismissedCallsRef.current.add(incomingCall.sessionId);
+    router.push(
+      `/psikolog/sesi?sessionId=${incomingCall.sessionId}&patientId=${incomingCall.patientId}&patientName=${encodeURIComponent(incomingCall.patientName)}`
+    );
+  }
 
   function reloadAll() {
     if (!profile) return;
@@ -153,17 +193,13 @@ export default function PsikologPage() {
             </p>
             <div className="mt-6 flex gap-2">
               <button
-                onClick={() => setIncomingCall(null)}
+                onClick={handleRejectCall}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-100 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
               >
                 <PhoneOff size={16} /> Tolak
               </button>
               <button
-                onClick={() =>
-                  router.push(
-                    `/psikolog/sesi?sessionId=${incomingCall.sessionId}&patientId=${incomingCall.patientId}&patientName=${encodeURIComponent(incomingCall.patientName)}`
-                  )
-                }
+                onClick={handleAcceptCall}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white"
               >
                 <PhoneCall size={16} /> Terima
@@ -248,7 +284,7 @@ export default function PsikologPage() {
                   {schedule.map((a) => (
                     <div
                       key={a.id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white p-4"
                     >
                       <div>
                         <p className="text-sm font-semibold text-slate-800">{a.patientName}</p>
@@ -256,11 +292,26 @@ export default function PsikologPage() {
                           {a.time} &middot; {a.durationMinutes} menit
                         </p>
                       </div>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${scheduleStatusStyle[a.status]}`}
-                      >
-                        {a.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {a.status === "Berlangsung" && (
+                          <button
+                            onClick={() => {
+                              dismissedCallsRef.current.add(a.id);
+                              router.push(
+                                `/psikolog/sesi?sessionId=${a.id}&patientName=${encodeURIComponent(a.patientName)}`
+                              );
+                            }}
+                            className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white"
+                          >
+                            <PhoneCall size={13} /> Gabung Video Call
+                          </button>
+                        )}
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${scheduleStatusStyle[a.status]}`}
+                        >
+                          {a.status}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

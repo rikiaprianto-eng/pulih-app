@@ -182,3 +182,16 @@ export function notifyIncomingCall(psychologistId: string, call: IncomingCall) {
     }
   });
 }
+
+/** Tells a patient still waiting in /session that the psychologist declined the call. */
+export function rejectIncomingCall(sessionId: string) {
+  const channel = supabase.channel(`call:${sessionId}`, {
+    config: { broadcast: { self: false } },
+  });
+  channel.subscribe((subStatus) => {
+    if (subStatus === "SUBSCRIBED") {
+      channel.send({ type: "broadcast", event: "signal", payload: { type: "hangup" } });
+      setTimeout(() => channel.unsubscribe(), 2000);
+    }
+  });
+}

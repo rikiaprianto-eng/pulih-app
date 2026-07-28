@@ -1,5 +1,5 @@
 import { supabase } from "./supabase/client";
-import type { Banner, Psychologist, Package, EventItem } from "./data";
+import type { Banner, Psychologist, Package, EventItem, Facility } from "./data";
 
 const BANNER_GRADIENTS = [
   "from-sky-700 via-sky-600 to-teal-500",
@@ -141,6 +141,21 @@ export async function fetchPackages(): Promise<Package[]> {
     originalPrice: p.original_price ?? undefined,
     highlight: p.badge === "Paling Populer",
     badge: p.badge ?? undefined,
+  }));
+}
+
+export async function fetchFacilities(): Promise<Facility[]> {
+  const { data, error } = await supabase
+    .from("facilities")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (error || !data) return [];
+  return data.map((f) => ({
+    id: f.id,
+    title: f.title,
+    description: f.description ?? "",
+    image: f.image_url ?? `https://picsum.photos/seed/pulih-facility-${f.id}/800/600`,
   }));
 }
 
@@ -336,6 +351,38 @@ export async function startSession(patientId: string, psychologistId: string, du
     .single();
   if (error || !data) throw error;
   return data;
+}
+
+/**
+ * Polled fallback for the incoming-call broadcast: finds a session a patient
+ * already started with this psychologist that hasn't been picked up (or
+ * rejected/ended) yet, so the call still surfaces even if the psychologist's
+ * dashboard wasn't open at the exact moment the patient started the session.
+ */
+export async function fetchIncomingSession(
+  psychologistId: string
+): Promise<{ sessionId: string; patientId: string; patientName: string } | null> {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("id, patient_id, started_at, profiles!sessions_patient_id_fkey(full_name)")
+    .eq("psychologist_id", psychologistId)
+    .eq("status", "ongoing")
+    .is("ended_at", null)
+    .gte("started_at", cutoff)
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  const row = data[0] as unknown as {
+    id: string;
+    patient_id: string;
+    profiles: { full_name: string | null } | null;
+  };
+  return {
+    sessionId: row.id,
+    patientId: row.patient_id,
+    patientName: row.profiles?.full_name ?? "Pasien Pulih",
+  };
 }
 
 export async function endSession(sessionId: string, status: "completed" | "extended" = "completed") {
@@ -768,6 +815,32 @@ export async function createEvent(fields: {
 
 export async function deleteEvent(id: string) {
   await supabase.from("events").delete().eq("id", id);
+}
+
+export async function createFacility(fields: { title: string; description: string; image: string }) {
+  const { data: rows } = await supabase
+    .from("facilities")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSortOrder = (rows?.[0]?.sort_order ?? 0) + 1;
+  await supabase.from("facilities").insert({
+    title: fields.title,
+    description: fields.description,
+    image_url: fields.image,
+    sort_order: nextSortOrder,
+  });
+}
+
+export async function updateFacility(id: string, fields: { title: string; description: string; image: string }) {
+  await supabase
+    .from("facilities")
+    .update({ title: fields.title, description: fields.description, image_url: fields.image })
+    .eq("id", id);
+}
+
+export async function deleteFacility(id: string) {
+  await supabase.from("facilities").delete().eq("id", id);
 }
 
 /** Updates a user's role. If promoting to psychologist, ensures a psychologist_profiles row exists. */

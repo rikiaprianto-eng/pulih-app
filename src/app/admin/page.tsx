@@ -35,6 +35,10 @@ import {
   fetchBanners,
   fetchPackages,
   fetchEvents,
+  fetchFacilities,
+  createFacility,
+  updateFacility,
+  deleteFacility,
   fetchSiteSettings,
   updateSiteSettings,
   fetchPaymentSecretStatus,
@@ -66,10 +70,11 @@ import {
   VerificationRequirement,
   SubmissionAnswer,
 } from "@/lib/queries";
-import type { Banner, Package, EventItem } from "@/lib/data";
+import type { Banner, Package, EventItem, Facility } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
 
 const MAX_EVENTS = 5;
+const MAX_FACILITIES = 10;
 
 const navItems = [
   { label: "Dashboard", href: "/admin" },
@@ -110,12 +115,15 @@ export default function AdminPage() {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
   const [editingPackage, setEditingPackage] = useState<Package | null>(null);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
+  const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
   const [addingUser, setAddingUser] = useState(false);
   const [addingPackage, setAddingPackage] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
   const [addingBanner, setAddingBanner] = useState(false);
+  const [addingFacility, setAddingFacility] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [updatingOnlineId, setUpdatingOnlineId] = useState<string | null>(null);
   const [updatingVerifyId, setUpdatingVerifyId] = useState<string | null>(null);
@@ -140,17 +148,19 @@ export default function AdminPage() {
       fetchBanners(),
       fetchPackages(),
       fetchEvents(),
+      fetchFacilities(),
       fetchSiteSettings(),
       fetchPaymentSecretStatus(),
       fetchVerificationRequirements(),
       fetchAllSubmissions(),
-    ]).then(([u, p, s, b, pkgs, ev, settingsData, secretStatus, reqs, subs]) => {
+    ]).then(([u, p, s, b, pkgs, ev, fac, settingsData, secretStatus, reqs, subs]) => {
       setUsers(u);
       setPayments(p);
       setStats(s);
       setBanners(b);
       setPackages(pkgs);
       setEvents(ev);
+      setFacilities(fac);
       setSettings(settingsData);
       setSecretConfigured(secretStatus.configured);
       setRequirements(reqs);
@@ -216,6 +226,24 @@ export default function AdminPage() {
     if (!confirm("Hapus event ini?")) return;
     await deleteEvent(id);
     setEvents((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  async function handleCreateFacility(fields: { title: string; description: string; image: string }) {
+    await createFacility(fields);
+    setAddingFacility(false);
+    reload();
+  }
+
+  async function saveFacility(facility: Facility) {
+    await updateFacility(facility.id, facility);
+    setFacilities((prev) => prev.map((f) => (f.id === facility.id ? facility : f)));
+    setEditingFacility(null);
+  }
+
+  async function handleDeleteFacility(id: string) {
+    if (!confirm("Hapus frame fasilitas ini?")) return;
+    await deleteFacility(id);
+    setFacilities((prev) => prev.filter((f) => f.id !== id));
   }
 
   async function handleRoleChange(
@@ -552,7 +580,7 @@ export default function AdminPage() {
               {tab === "content" && (
                 <div>
                   <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Konten</h1>
-                  <p className="mt-1 text-sm text-slate-500">Kelola banner Hero Section dan event pada halaman utama.</p>
+                  <p className="mt-1 text-sm text-slate-500">Kelola banner Hero Section, event, dan frame fasilitas pada halaman utama.</p>
 
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-heading text-sm font-semibold text-slate-900">Banner</h2>
@@ -639,6 +667,59 @@ export default function AdminPage() {
                     {events.length === 0 && (
                       <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
                         Belum ada event.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="font-heading text-sm font-semibold text-slate-900">
+                        Fasilitas ({facilities.length}/{MAX_FACILITIES})
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Frame penjelasan fitur (mis. Teman Curhat, Psikolog Profesional) di halaman
+                        utama. Maksimal {MAX_FACILITIES} frame.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAddingFacility(true)}
+                      disabled={facilities.length >= MAX_FACILITIES}
+                      className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Plus size={14} /> Tambah Fasilitas
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-3">
+                    {facilities.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4"
+                      >
+                        <img src={f.image} alt={f.title} className="h-16 w-28 rounded-lg object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">{f.title}</p>
+                          <p className="truncate text-xs text-slate-500">{f.description}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setEditingFacility(f)}
+                            className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            <Pencil size={13} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFacility(f.id)}
+                            className="flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={13} /> Hapus
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {facilities.length === 0 && (
+                      <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+                        Belum ada frame fasilitas.
                       </p>
                     )}
                   </div>
@@ -751,6 +832,16 @@ export default function AdminPage() {
       )}
       {addingBanner && (
         <AddBannerModal onCancel={() => setAddingBanner(false)} onSave={handleCreateBanner} />
+      )}
+      {editingFacility && (
+        <EditFacilityModal
+          facility={editingFacility}
+          onCancel={() => setEditingFacility(null)}
+          onSave={saveFacility}
+        />
+      )}
+      {addingFacility && (
+        <AddFacilityModal onCancel={() => setAddingFacility(false)} onSave={handleCreateFacility} />
       )}
       {addingRequirement && (
         <AddRequirementModal
@@ -1054,6 +1145,151 @@ function AddBannerModal({
 
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-600">Gambar Banner</label>
+        {form.image && (
+          <img src={form.image} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />
+        )}
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
+        </label>
+        {!form.image && (
+          <p className="mt-1 text-[11px] text-slate-400">Gambar wajib diunggah sebelum menyimpan.</p>
+        )}
+        {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
+      </div>
+      {formError && <p className="text-xs font-medium text-red-600">{formError}</p>}
+    </ModalShell>
+  );
+}
+
+function EditFacilityModal({
+  facility,
+  onCancel,
+  onSave,
+}: {
+  facility: Facility;
+  onCancel: () => void;
+  onSave: (facility: Facility) => void;
+}) {
+  const [form, setForm] = useState(facility);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const url = await uploadBannerImage(file);
+      setForm((f) => ({ ...f, image: url }));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <ModalShell
+      title="Edit Fasilitas"
+      onCancel={onCancel}
+      saving={saving}
+      onSubmit={async () => {
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      }}
+    >
+      <Field label="Judul" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+      <Field
+        label="Deskripsi"
+        value={form.description}
+        onChange={(v) => setForm({ ...form, description: v })}
+      />
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Gambar</label>
+        {form.image && (
+          <img src={form.image} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />
+        )}
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
+        </label>
+        {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
+      </div>
+    </ModalShell>
+  );
+}
+
+function AddFacilityModal({
+  onCancel,
+  onSave,
+}: {
+  onCancel: () => void;
+  onSave: (fields: { title: string; description: string; image: string }) => Promise<void>;
+}) {
+  const [form, setForm] = useState({ title: "", description: "", image: "" });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setFormError(null);
+    setUploading(true);
+    try {
+      const url = await uploadBannerImage(file);
+      setForm((f) => ({ ...f, image: url }));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <ModalShell
+      title="Tambah Fasilitas"
+      submitLabel="Tambahkan"
+      onCancel={onCancel}
+      saving={saving}
+      onSubmit={async () => {
+        if (!form.title.trim()) {
+          setFormError("Judul fasilitas wajib diisi.");
+          return;
+        }
+        if (!form.image) {
+          setFormError("Unggah gambar terlebih dahulu.");
+          return;
+        }
+        setFormError(null);
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      }}
+    >
+      <Field
+        label="Judul"
+        value={form.title}
+        onChange={(v) => {
+          setForm({ ...form, title: v });
+          setFormError(null);
+        }}
+      />
+      <Field
+        label="Deskripsi"
+        value={form.description}
+        onChange={(v) => setForm({ ...form, description: v })}
+      />
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Gambar</label>
         {form.image && (
           <img src={form.image} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />
         )}

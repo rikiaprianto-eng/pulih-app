@@ -19,9 +19,9 @@ import Footer from "@/components/Footer";
 import HeroCarousel from "@/components/HeroCarousel";
 import PsychologistCard from "@/components/PsychologistCard";
 import { features, testimonials } from "@/lib/data";
-import type { Banner, Psychologist, EventItem } from "@/lib/data";
+import type { Banner, Psychologist, EventItem, Facility } from "@/lib/data";
 import { avatarUrl } from "@/lib/utils";
-import { fetchBanners, fetchPsychologists, fetchEvents } from "@/lib/queries";
+import { fetchBanners, fetchPsychologists, fetchEvents, fetchFacilities } from "@/lib/queries";
 
 const iconMap = {
   Video,
@@ -36,14 +36,16 @@ export default function Home() {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [psychologists, setPsychologists] = useState<Psychologist[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchBanners(), fetchPsychologists(), fetchEvents()]).then(
-      ([b, p, e]) => {
+    Promise.all([fetchBanners(), fetchPsychologists(), fetchEvents(), fetchFacilities()]).then(
+      ([b, p, e, f]) => {
         setBanners(b);
         setPsychologists(p);
         setEvents(e);
+        setFacilities(f);
         setLoading(false);
       }
     );
@@ -105,6 +107,40 @@ export default function Home() {
             })}
           </div>
         </section>
+
+        {/* Fasilitas */}
+        {!loading && facilities.length > 0 && (
+          <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <span className="text-sm font-semibold uppercase tracking-wide text-teal-600">
+                Fasilitas
+              </span>
+              <h2 className="mt-2 font-heading text-2xl font-bold text-slate-900 sm:text-3xl">
+                Dua cara terhubung dengan pendampingmu
+              </h2>
+              <p className="mt-3 text-slate-500">
+                Pilih sesuai kebutuhanmu — ngobrol santai atau konsultasi profesional.
+              </p>
+            </div>
+
+            <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {facilities.map((f) => (
+                <div
+                  key={f.id}
+                  className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm shadow-slate-100 transition hover:-translate-y-1 hover:shadow-md"
+                >
+                  <img src={f.image} alt={f.title} className="h-44 w-full object-cover" />
+                  <div className="p-5">
+                    <h3 className="font-heading text-base font-semibold text-slate-900">
+                      {f.title}
+                    </h3>
+                    <p className="mt-1.5 text-sm text-slate-500">{f.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Psikolog aktif */}
         <section className="bg-slate-50 py-16">
