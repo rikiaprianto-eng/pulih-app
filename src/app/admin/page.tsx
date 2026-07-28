@@ -48,6 +48,7 @@ import {
   updateUserRole,
   createUserAsAdmin,
   setOnlineStatus,
+  setPsychologistVerification,
   AdminUserView,
   PendingPaymentView,
   AdminStats,
@@ -104,6 +105,7 @@ export default function AdminPage() {
   const [addingBanner, setAddingBanner] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [updatingOnlineId, setUpdatingOnlineId] = useState<string | null>(null);
+  const [updatingVerifyId, setUpdatingVerifyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [secretConfigured, setSecretConfigured] = useState(false);
 
@@ -213,6 +215,13 @@ export default function AdminPage() {
     await setOnlineStatus(userId, nextOnline);
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, isOnline: nextOnline } : u)));
     setUpdatingOnlineId(null);
+  }
+
+  async function handleVerifyPsychologist(userId: string, status: "verified" | "rejected") {
+    setUpdatingVerifyId(userId);
+    await setPsychologistVerification(userId, status);
+    await reload();
+    setUpdatingVerifyId(null);
   }
 
   async function handleCreateUser(fields: {
@@ -328,7 +337,7 @@ export default function AdminPage() {
 
                   <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
                     <div className="overflow-x-auto">
-                    <table className="w-full min-w-[680px] text-left text-sm">
+                    <table className="w-full min-w-[820px] text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-5 py-3 font-medium">Nama</th>
@@ -372,9 +381,34 @@ export default function AdminPage() {
                             </td>
                             <td className="px-5 py-3.5 text-slate-500">{u.joined}</td>
                             <td className="px-5 py-3.5">
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userStatusStyle[u.status]}`}>
-                                {u.status}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userStatusStyle[u.status]}`}>
+                                  {u.status}
+                                </span>
+                                {u.rawRole === "psychologist" && u.status !== "Aktif" && (
+                                  <button
+                                    onClick={() => handleVerifyPsychologist(u.id, "verified")}
+                                    disabled={updatingVerifyId === u.id}
+                                    className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                  >
+                                    {updatingVerifyId === u.id ? (
+                                      <Loader2 size={11} className="animate-spin" />
+                                    ) : (
+                                      <Check size={11} />
+                                    )}
+                                    Verifikasi
+                                  </button>
+                                )}
+                                {u.rawRole === "psychologist" && u.status === "Aktif" && (
+                                  <button
+                                    onClick={() => handleVerifyPsychologist(u.id, "rejected")}
+                                    disabled={updatingVerifyId === u.id}
+                                    className="flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
+                                  >
+                                    <XIcon size={11} /> Tangguhkan
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td className="px-5 py-3.5">
                               {u.rawRole === "psychologist" ? (

@@ -45,16 +45,19 @@ type PsychologistRow = {
 };
 
 export async function fetchPsychologists(): Promise<Psychologist[]> {
+  // Only publicly list psychologists an admin has verified — pending/rejected
+  // accounts stay hidden from patients until approved (see Manajemen User in admin).
   const { data, error } = await supabase
     .from("profiles")
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
-    .eq("role", "psychologist");
+    .eq("role", "psychologist")
+    .eq("psychologist_profiles.verification_status", "verified");
 
   if (error || !data) return [];
 
@@ -305,6 +308,14 @@ export async function extendSession(sessionId: string, extraMinutes: number) {
 
 export async function setOnlineStatus(psychologistId: string, isOnline: boolean) {
   await supabase.from("psychologist_profiles").update({ is_online: isOnline }).eq("id", psychologistId);
+}
+
+/** Admin-only: approve or reject a psychologist so they can (or can't) appear publicly. */
+export async function setPsychologistVerification(
+  psychologistId: string,
+  status: "verified" | "rejected" | "pending"
+) {
+  await supabase.from("psychologist_profiles").update({ verification_status: status }).eq("id", psychologistId);
 }
 
 export async function fetchIsOnline(psychologistId: string): Promise<boolean> {
