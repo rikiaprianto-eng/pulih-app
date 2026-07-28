@@ -257,6 +257,10 @@ export default function PricingPage() {
                         <h2 className="font-heading text-base font-semibold text-slate-900">
                           Pilih Metode Pembayaran
                         </h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Gratis tanpa biaya tambahan — pembayaran dikonfirmasi otomatis, langsung
+                          aktif tanpa menunggu verifikasi admin.
+                        </p>
 
                         <PaymentGroup
                           icon={<QrCode size={16} />}
@@ -289,7 +293,8 @@ export default function PricingPage() {
                             />
                             <p className="mt-3 text-center text-xs text-slate-500">
                               Scan kode QR di atas menggunakan aplikasi mobile banking atau
-                              e-wallet favoritmu. (QR demo)
+                              e-wallet favoritmu, lalu klik &ldquo;Bayar Sekarang&rdquo; untuk
+                              menyelesaikan.
                             </p>
                           </div>
                         )}
@@ -301,7 +306,8 @@ export default function PricingPage() {
                               {settings?.bankAccountNumber || "8808 8812 3456 7890"}
                             </p>
                             <p className="mt-2 text-xs text-slate-400">
-                              Transfer melalui {selectedMethod.name} sebelum 24 jam. (Nomor demo)
+                              Transfer melalui {selectedMethod.name}, lalu klik &ldquo;Bayar
+                              Sekarang&rdquo; — status akan terkonfirmasi otomatis.
                             </p>
                           </div>
                         )}
@@ -309,8 +315,9 @@ export default function PricingPage() {
                         {selectedMethod.category === "ewallet" && (
                           <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
                             <p className="text-sm text-slate-600">
-                              Kamu akan diarahkan ke aplikasi {selectedMethod.name} untuk
-                              menyelesaikan pembayaran. (Simulasi demo)
+                              Klik &ldquo;Bayar Sekarang&rdquo; untuk menyelesaikan pembayaran lewat{" "}
+                              {selectedMethod.name} — status terkonfirmasi otomatis, tanpa biaya
+                              tambahan.
                             </p>
                           </div>
                         )}
@@ -355,7 +362,7 @@ export default function PricingPage() {
                         ? "Kamu akan diminta masuk terlebih dahulu sebelum membayar."
                         : useMidtrans
                           ? "Pembayaran diproses aman lewat Midtrans — transaksi & langgananmu langsung tersimpan."
-                          : "Simulasi metode pembayaran, tapi transaksi & langgananmu tersimpan sungguhan."}
+                          : "Gratis tanpa biaya tambahan — pembayaran terkonfirmasi otomatis dan langgananmu langsung aktif."}
                     </p>
                   </div>
                 </div>

@@ -22,6 +22,7 @@ import {
   fetchSiteSettings,
   createDirectCheckout,
   createDirectMidtransTransaction,
+  effectiveHourlyRate,
   SiteSettings,
 } from "@/lib/queries";
 import { setRedirectAfterLogin } from "@/lib/auth";
@@ -86,6 +87,9 @@ export default function BayarKonsultasiPage() {
     document.body.appendChild(script);
   }, [settings]);
 
+  const finalRate = psy ? effectiveHourlyRate(psy) : 0;
+  const hasDiscount = !!psy && psy.discountPercent > 0;
+
   async function pay() {
     if (!psy || !psy.hourlyRate) return;
     if (!profile) {
@@ -114,7 +118,7 @@ export default function BayarKonsultasiPage() {
     }
 
     try {
-      await createDirectCheckout(profile.id, psy.id, psy.hourlyRate, selectedMethod.name);
+      await createDirectCheckout(profile.id, psy.id, finalRate, selectedMethod.name);
       setStep("success");
     } catch {
       setPayError("Gagal memproses pembayaran. Coba lagi.");
@@ -188,6 +192,10 @@ export default function BayarKonsultasiPage() {
                         <h2 className="font-heading text-base font-semibold text-slate-900">
                           Pilih Metode Pembayaran
                         </h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Gratis tanpa biaya tambahan — pembayaran dikonfirmasi otomatis, sesi
+                          langsung siap dimulai.
+                        </p>
 
                         <PaymentGroup
                           icon={<QrCode size={16} />}
@@ -220,7 +228,8 @@ export default function BayarKonsultasiPage() {
                             />
                             <p className="mt-3 text-center text-xs text-slate-500">
                               Scan kode QR di atas menggunakan aplikasi mobile banking atau
-                              e-wallet favoritmu. (QR demo)
+                              e-wallet favoritmu, lalu klik &ldquo;Bayar Sekarang&rdquo; untuk
+                              menyelesaikan.
                             </p>
                           </div>
                         )}
@@ -232,7 +241,8 @@ export default function BayarKonsultasiPage() {
                               {settings?.bankAccountNumber || "8808 8812 3456 7890"}
                             </p>
                             <p className="mt-2 text-xs text-slate-400">
-                              Transfer melalui {selectedMethod.name} sebelum 24 jam. (Nomor demo)
+                              Transfer melalui {selectedMethod.name}, lalu klik &ldquo;Bayar
+                              Sekarang&rdquo; — status akan terkonfirmasi otomatis.
                             </p>
                           </div>
                         )}
@@ -240,8 +250,9 @@ export default function BayarKonsultasiPage() {
                         {selectedMethod.category === "ewallet" && (
                           <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-6 text-center">
                             <p className="text-sm text-slate-600">
-                              Kamu akan diarahkan ke aplikasi {selectedMethod.name} untuk
-                              menyelesaikan pembayaran. (Simulasi demo)
+                              Klik &ldquo;Bayar Sekarang&rdquo; untuk menyelesaikan pembayaran lewat{" "}
+                              {selectedMethod.name} — status terkonfirmasi otomatis, tanpa biaya
+                              tambahan.
                             </p>
                           </div>
                         )}
@@ -269,12 +280,27 @@ export default function BayarKonsultasiPage() {
                     <div className="mt-4 flex justify-between text-sm">
                       <span className="text-slate-500">Tarif per jam</span>
                       <span className="font-medium text-slate-800">
-                        {formatIDR(psy.hourlyRate ?? 0)}
+                        {hasDiscount ? (
+                          <>
+                            <span className="mr-1.5 text-slate-400 line-through">
+                              {formatIDR(psy.hourlyRate ?? 0)}
+                            </span>
+                            {formatIDR(finalRate)}
+                          </>
+                        ) : (
+                          formatIDR(psy.hourlyRate ?? 0)
+                        )}
                       </span>
                     </div>
+                    {hasDiscount && (
+                      <div className="mt-2 flex justify-between text-sm">
+                        <span className="text-slate-500">Diskon</span>
+                        <span className="font-medium text-emerald-600">{psy.discountPercent}%</span>
+                      </div>
+                    )}
                     <div className="mt-4 flex justify-between border-t border-slate-100 pt-4 text-sm font-semibold">
                       <span className="text-slate-900">Total</span>
-                      <span className="text-teal-700">{formatIDR(psy.hourlyRate ?? 0)}</span>
+                      <span className="text-teal-700">{formatIDR(finalRate)}</span>
                     </div>
 
                     {payError && <p className="mt-4 text-center text-sm text-red-600">{payError}</p>}

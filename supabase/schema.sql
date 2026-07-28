@@ -113,12 +113,15 @@ create table if not exists public.psychologist_profiles (
   -- packages table. 'profesional' = licensed psychologist tier (typically S2), sets
   -- their own hourly_rate and patients pay that rate directly per session.
   category text not null default 'teman_curhat' check (category in ('teman_curhat', 'profesional')),
-  hourly_rate integer
+  hourly_rate integer,
+  -- Discount (0-100%) a Psikolog Profesional can offer on their own hourly_rate.
+  discount_percent integer not null default 0
 );
 
 -- In case psychologist_profiles already existed from an earlier run of this file.
 alter table public.psychologist_profiles add column if not exists category text not null default 'teman_curhat';
 alter table public.psychologist_profiles add column if not exists hourly_rate integer;
+alter table public.psychologist_profiles add column if not exists discount_percent integer not null default 0;
 do $$ begin
   if not exists (
     select 1 from pg_constraint where conname = 'psychologist_profiles_category_check'
@@ -245,10 +248,17 @@ create table if not exists public.transactions (
   payment_method text,
   status text not null default 'paid' check (status in ('pending', 'paid', 'failed', 'expired')),
   created_at timestamptz not null default now(),
-  paid_at timestamptz default now()
+  paid_at timestamptz default now(),
+  -- Revenue split at the moment of payment: platform cut vs. the psychologist's
+  -- share. Teman Curhat uses a flat fee (site_settings.teman_curhat_admin_fee);
+  -- Psikolog Profesional uses a percentage (site_settings.profesional_admin_fee_percent).
+  admin_fee_amount integer,
+  psychologist_share_amount integer
 );
 
 alter table public.transactions add column if not exists psychologist_id uuid references public.profiles (id);
+alter table public.transactions add column if not exists admin_fee_amount integer;
+alter table public.transactions add column if not exists psychologist_share_amount integer;
 
 create table if not exists public.user_subscriptions (
   id uuid primary key default gen_random_uuid(),
@@ -308,12 +318,18 @@ create table if not exists public.site_settings (
   payment_gateway text not null default 'manual' check (payment_gateway in ('manual', 'midtrans')),
   midtrans_client_key text,
   midtrans_is_production boolean not null default false,
+  -- Flat platform fee (Rp) taken from every Teman Curhat package transaction; the rest is the psychologist's share.
+  teman_curhat_admin_fee integer not null default 14000,
+  -- Platform fee percentage (0-100) taken from every Psikolog Profesional hourly-rate transaction.
+  profesional_admin_fee_percent integer not null default 10,
   constraint site_settings_single_row check (id = 1)
 );
 
 -- In case site_settings already existed from an earlier run of this file (before
 -- logo_url was added) — "create table if not exists" above wouldn't add the column.
 alter table public.site_settings add column if not exists logo_url text;
+alter table public.site_settings add column if not exists teman_curhat_admin_fee integer not null default 14000;
+alter table public.site_settings add column if not exists profesional_admin_fee_percent integer not null default 10;
 
 -- Server-only secret storage. Deliberately has NO select/insert/update policies for
 -- anon or authenticated roles below — only the service_role key (used exclusively

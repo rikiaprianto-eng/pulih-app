@@ -4,12 +4,15 @@ import { Star } from "lucide-react";
 import Link from "next/link";
 import { Psychologist } from "@/lib/data";
 import { avatarUrl, formatIDR } from "@/lib/utils";
+import { effectiveHourlyRate } from "@/lib/queries";
 
 export default function PsychologistCard({ psy }: { psy: Psychologist }) {
   const isProfesional = psy.category === "profesional";
   const sessionHref = isProfesional
     ? `/bayar-konsultasi?psy=${psy.id}`
     : `/session?psy=${psy.id}&name=${encodeURIComponent(psy.name)}`;
+  const finalRate = effectiveHourlyRate(psy);
+  const hasDiscount = isProfesional && psy.discountPercent > 0 && !!psy.hourlyRate;
   return (
     <div className="flex w-full flex-col rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-100 transition hover:-translate-y-1 hover:shadow-md">
       <div className="flex items-start gap-3">
@@ -56,7 +59,23 @@ export default function PsychologistCard({ psy }: { psy: Psychologist }) {
 
       {isProfesional && (
         <p className="mt-2 text-sm font-semibold text-slate-800">
-          {psy.hourlyRate ? `${formatIDR(psy.hourlyRate)} / jam` : "Tarif belum diatur"}
+          {psy.hourlyRate ? (
+            <>
+              {hasDiscount && (
+                <span className="mr-1.5 text-xs font-normal text-slate-400 line-through">
+                  {formatIDR(psy.hourlyRate)}
+                </span>
+              )}
+              {formatIDR(finalRate)} / jam
+              {hasDiscount && (
+                <span className="ml-1.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                  -{psy.discountPercent}%
+                </span>
+              )}
+            </>
+          ) : (
+            "Tarif belum diatur"
+          )}
         </p>
       )}
 

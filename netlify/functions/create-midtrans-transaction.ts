@@ -24,7 +24,11 @@ export const handler: Handler = async (event) => {
 
   const [{ data: secret }, { data: settings }, { data: profile }] = await Promise.all([
     admin.from("payment_secrets").select("midtrans_server_key").eq("id", 1).maybeSingle(),
-    admin.from("site_settings").select("midtrans_is_production").eq("id", 1).maybeSingle(),
+    admin
+      .from("site_settings")
+      .select("midtrans_is_production, teman_curhat_admin_fee, profesional_admin_fee_percent")
+      .eq("id", 1)
+      .maybeSingle(),
     admin.from("profiles").select("full_name, email").eq("id", userId).single(),
   ]);
 
@@ -38,6 +42,8 @@ export const handler: Handler = async (event) => {
   let itemId: string;
   let itemName: string;
   let insertFields: Record<string, unknown>;
+  let adminFeeAmount: number;
+  let psychologistShareAmount: number;
 
   if (body.packageId) {
     const { data: pkg } = await admin.from("packages").select("*").eq("id", body.packageId).single();
@@ -45,25 +51,41 @@ export const handler: Handler = async (event) => {
     amount = pkg.price;
     itemId = pkg.id;
     itemName = pkg.name;
-    insertFields = { patient_id: userId, package_id: pkg.id, amount, payment_method: "Midtrans", status: "pending" };
+    adminFeeAmount = Math.min(Math.max(settings?.teman_curhat_admin_fee ?? 14000, 0), amount);
+    psychologistShareAmount = amount - adminFeeAmount;
+    insertFields = {
+      patient_id: userId,
+      package_id: pkg.id,
+      amount,
+      payment_method: "Midtrans",
+      status: "pending",
+      admin_fee_amount: adminFeeAmount,
+      psychologist_share_amount: psychologistShareAmount,
+    };
   } else {
     const { data: psy } = await admin
       .from("psychologist_profiles")
-      .select("id, hourly_rate, profiles!inner(full_name)")
+      .select("id, hourly_rate, discount_percent, profiles!inner(full_name)")
       .eq("id", body.psychologistId)
       .single();
     if (!psy || !psy.hourly_rate) {
       return jsonResponse(404, { error: "Psikolog tidak ditemukan atau belum menentukan tarif." });
     }
-    amount = psy.hourly_rate;
+    const discountPercent = Math.min(Math.max(psy.discount_percent ?? 0, 0), 100);
+    amount = Math.round(psy.hourly_rate * (1 - discountPercent / 100));
     itemId = psy.id;
     itemName = `Konsultasi ${(psy as unknown as { profiles: { full_name: string | null } }).profiles?.full_name ?? "Psikolog"}`;
+    const feePercent = Math.min(Math.max(settings?.profesional_admin_fee_percent ?? 10, 0), 100);
+    adminFeeAmount = Math.round((amount * feePercent) / 100);
+    psychologistShareAmount = amount - adminFeeAmount;
     insertFields = {
       patient_id: userId,
       psychologist_id: psy.id,
       amount,
       payment_method: "Midtrans",
       status: "pending",
+      admin_fee_amount: adminFeeAmount,
+      psychologist_share_amount: psychologistShareAmount,
     };
   }
 

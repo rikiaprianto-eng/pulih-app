@@ -132,6 +132,7 @@ export default function AdminPage() {
   const [requirements, setRequirements] = useState<VerificationRequirement[]>([]);
   const [submissions, setSubmissions] = useState<Record<string, SubmissionAnswer[]>>({});
   const [addingRequirement, setAddingRequirement] = useState(false);
+  const [pricingSubTab, setPricingSubTab] = useState<"teman_curhat" | "profesional">("teman_curhat");
 
   useEffect(() => {
     if (!profile) return;
@@ -445,6 +446,21 @@ export default function AdminPage() {
                                     </option>
                                   ))}
                                 </select>
+                                {u.rawRole === "psychologist" && (
+                                  <select
+                                    value={u.category ?? "teman_curhat"}
+                                    onChange={(e) =>
+                                      handleChangeCategory(
+                                        u.id,
+                                        e.target.value as "teman_curhat" | "profesional"
+                                      )
+                                    }
+                                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-teal-500"
+                                  >
+                                    <option value="teman_curhat">Teman Curhat</option>
+                                    <option value="profesional">Profesional</option>
+                                  </select>
+                                )}
                                 {updatingRoleId === u.id && (
                                   <Loader2 size={13} className="animate-spin text-slate-400" />
                                 )}
@@ -726,71 +742,127 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {tab === "pricing" && (
+              {tab === "pricing" && settings && (
                 <div>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Harga</h1>
-                      <p className="mt-1 text-sm text-slate-500">Atur tarif paket langganan konseling.</p>
-                    </div>
+                  <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Harga</h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Tarif Teman Curhat (paket + komposisi bagi hasil) dan biaya admin Psikolog
+                    Profesional diatur terpisah.
+                  </p>
+
+                  <div className="mt-5 inline-flex rounded-full bg-slate-100 p-1">
                     <button
-                      onClick={() => setAddingPackage(true)}
-                      className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white"
+                      onClick={() => setPricingSubTab("teman_curhat")}
+                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        pricingSubTab === "teman_curhat" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                      }`}
                     >
-                      <Plus size={14} /> Tambah Paket
+                      Teman Curhat
+                    </button>
+                    <button
+                      onClick={() => setPricingSubTab("profesional")}
+                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        pricingSubTab === "profesional" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                      }`}
+                    >
+                      Psikolog Profesional
                     </button>
                   </div>
 
-                  <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
-                    <div className="overflow-x-auto">
-                    <table className="w-full min-w-[620px] text-left text-sm">
-                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-5 py-3 font-medium">Paket</th>
-                          <th className="px-5 py-3 font-medium">Durasi</th>
-                          <th className="px-5 py-3 font-medium">Kuota</th>
-                          <th className="px-5 py-3 font-medium">Harga</th>
-                          <th className="px-5 py-3 font-medium" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {packages.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/60">
-                            <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
-                            <td className="px-5 py-3.5 text-slate-500">{p.durationMinutes} menit</td>
-                            <td className="px-5 py-3.5 text-slate-500">{p.sessionQuota}x sesi</td>
-                            <td className="px-5 py-3.5 font-semibold text-slate-800">
-                              {formatIDR(p.price)}
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <div className="flex justify-end gap-2">
-                                <button
-                                  onClick={() => setEditingPackage(p)}
-                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                >
-                                  <Pencil size={13} /> Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeletePackage(p.id)}
-                                  className="inline-flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                                >
-                                  <Trash2 size={13} /> Hapus
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                        {packages.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">
-                              Belum ada paket.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                  {pricingSubTab === "teman_curhat" ? (
+                    <div className="mt-5">
+                      <AdminFeeCard
+                        label="Biaya Admin per Transaksi (Rp)"
+                        description="Nominal tetap yang menjadi hak platform dari setiap pembelian paket Teman Curhat — sisanya menjadi hak psikolog."
+                        value={settings.temanCurhatAdminFee}
+                        onSave={(v) => handleSaveSettings({ ...settings, temanCurhatAdminFee: v })}
+                      />
+
+                      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                        <h2 className="font-heading text-sm font-semibold text-slate-900">Paket</h2>
+                        <button
+                          onClick={() => setAddingPackage(true)}
+                          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white"
+                        >
+                          <Plus size={14} /> Tambah Paket
+                        </button>
+                      </div>
+
+                      <div className="mt-3 overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                        <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-left text-sm">
+                          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="px-5 py-3 font-medium">Paket</th>
+                              <th className="px-5 py-3 font-medium">Durasi</th>
+                              <th className="px-5 py-3 font-medium">Kuota</th>
+                              <th className="px-5 py-3 font-medium">Harga</th>
+                              <th className="px-5 py-3 font-medium">Bagi Hasil</th>
+                              <th className="px-5 py-3 font-medium" />
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {packages.map((p) => {
+                              const adminFee = Math.min(settings.temanCurhatAdminFee, p.price);
+                              return (
+                                <tr key={p.id} className="hover:bg-slate-50/60">
+                                  <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
+                                  <td className="px-5 py-3.5 text-slate-500">{p.durationMinutes} menit</td>
+                                  <td className="px-5 py-3.5 text-slate-500">{p.sessionQuota}x sesi</td>
+                                  <td className="px-5 py-3.5">
+                                    {p.originalPrice && p.originalPrice > p.price && (
+                                      <span className="mr-1.5 text-xs text-slate-400 line-through">
+                                        {formatIDR(p.originalPrice)}
+                                      </span>
+                                    )}
+                                    <span className="font-semibold text-slate-800">{formatIDR(p.price)}</span>
+                                  </td>
+                                  <td className="px-5 py-3.5 text-xs text-slate-500">
+                                    Admin {formatIDR(adminFee)} &middot; Psikolog{" "}
+                                    {formatIDR(p.price - adminFee)}
+                                  </td>
+                                  <td className="px-5 py-3.5">
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        onClick={() => setEditingPackage(p)}
+                                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                      >
+                                        <Pencil size={13} /> Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeletePackage(p.id)}
+                                        className="inline-flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                      >
+                                        <Trash2 size={13} /> Hapus
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {packages.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="px-5 py-8 text-center text-sm text-slate-400">
+                                  Belum ada paket.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="mt-5 max-w-md">
+                      <AdminFeeCard
+                        label="Biaya Admin (%)"
+                        description="Persentase yang menjadi hak platform dari setiap pembayaran langsung ke Psikolog Profesional. Psikolog menentukan tarif per jam & diskonnya sendiri di dashboard masing-masing."
+                        value={settings.profesionalAdminFeePercent}
+                        suffix="%"
+                        onSave={(v) => handleSaveSettings({ ...settings, profesionalAdminFeePercent: v })}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -849,6 +921,57 @@ export default function AdminPage() {
           onSave={handleCreateRequirement}
         />
       )}
+    </div>
+  );
+}
+
+function AdminFeeCard({
+  label,
+  description,
+  value,
+  suffix,
+  onSave,
+}: {
+  label: string;
+  description: string;
+  value: number;
+  suffix?: string;
+  onSave: (value: number) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white p-5">
+      <p className="text-sm font-semibold text-slate-800">{label}</p>
+      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          type="number"
+          min={0}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setSaved(false);
+          }}
+          className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+        />
+        {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
+        <button
+          onClick={async () => {
+            setSaving(true);
+            await onSave(Number(draft) || 0);
+            setSaving(false);
+            setSaved(true);
+          }}
+          disabled={saving}
+          className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sky-600 to-teal-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {saving && <Loader2 size={13} className="animate-spin" />}
+          {saved ? "Tersimpan" : "Simpan"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -937,6 +1060,12 @@ function EditPackageModal({
         onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
       />
       <Field
+        label="Harga Asli sebelum diskon (Rp, opsional)"
+        type="number"
+        value={form.originalPrice ? String(form.originalPrice) : ""}
+        onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
+      />
+      <Field
         label="Durasi (menit)"
         type="number"
         value={String(form.durationMinutes)}
@@ -959,7 +1088,7 @@ function AddPackageModal({
   onCancel: () => void;
   onSave: (pkg: Omit<Package, "id">) => Promise<void>;
 }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Omit<Package, "id">>({
     name: "",
     description: "",
     durationMinutes: 60,
@@ -992,6 +1121,12 @@ function AddPackageModal({
         type="number"
         value={String(form.price)}
         onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
+      />
+      <Field
+        label="Harga Asli sebelum diskon (Rp, opsional)"
+        type="number"
+        value={form.originalPrice ? String(form.originalPrice) : ""}
+        onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
       />
       <Field
         label="Durasi (menit)"

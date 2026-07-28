@@ -27,6 +27,7 @@ export type Psychologist = {
   price60: number;
   category: PsychologistCategory;
   hourlyRate: number | null;
+  discountPercent: number;
 };
 
 export type Package = {

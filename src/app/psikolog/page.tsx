@@ -31,8 +31,8 @@ import {
   fetchVerificationRequirements,
   fetchMySubmissions,
   fetchMyCategory,
-  fetchMyHourlyRate,
-  updateHourlyRate,
+  fetchMyPricing,
+  updateProfessionalPricing,
   fetchIncomingSession,
   endSession,
   submitTextAnswer,
@@ -73,6 +73,7 @@ export default function PsikologPage() {
   const [mySubmissions, setMySubmissions] = useState<SubmissionAnswer[]>([]);
   const [category, setCategory] = useState<"teman_curhat" | "profesional">("teman_curhat");
   const [hourlyRate, setHourlyRate] = useState<number | null>(null);
+  const [discountPercent, setDiscountPercent] = useState(0);
 
   useEffect(() => {
     if (!profile) return;
@@ -141,8 +142,8 @@ export default function PsikologPage() {
       fetchVerificationRequirements(),
       fetchMySubmissions(profile.id),
       fetchMyCategory(profile.id),
-      fetchMyHourlyRate(profile.id),
-    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs, cat, rate]) => {
+      fetchMyPricing(profile.id),
+    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs, cat, pricing]) => {
       setSchedule(sched);
       setPatients(pts);
       setOnline(isOnline);
@@ -150,7 +151,8 @@ export default function PsikologPage() {
       setRequirements(reqs);
       setMySubmissions(subs);
       setCategory(cat);
-      setHourlyRate(rate);
+      setHourlyRate(pricing.hourlyRate);
+      setDiscountPercent(pricing.discountPercent);
       setLoading(false);
     });
   }
@@ -256,7 +258,11 @@ export default function PsikologPage() {
           <HourlyRateCard
             profileId={profile.id}
             hourlyRate={hourlyRate}
-            onSaved={(rate) => setHourlyRate(rate)}
+            discountPercent={discountPercent}
+            onSaved={(rate, discount) => {
+              setHourlyRate(rate);
+              setDiscountPercent(discount);
+            }}
           />
         )}
 
@@ -383,24 +389,30 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 function HourlyRateCard({
   profileId,
   hourlyRate,
+  discountPercent,
   onSaved,
 }: {
   profileId: string;
   hourlyRate: number | null;
-  onSaved: (rate: number) => void;
+  discountPercent: number;
+  onSaved: (rate: number, discount: number) => void;
 }) {
   const [value, setValue] = useState(hourlyRate ? String(hourlyRate) : "");
+  const [discountValue, setDiscountValue] = useState(String(discountPercent || 0));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const rateNum = Number(value) || 0;
+  const discountNum = Math.min(Math.max(Number(discountValue) || 0, 0), 100);
+  const finalRate = Math.round(rateNum * (1 - discountNum / 100));
+
   async function handleSave() {
-    const rate = Number(value);
-    if (!rate || rate <= 0) return;
+    if (!rateNum || rateNum <= 0) return;
     setSaving(true);
-    await updateHourlyRate(profileId, rate);
+    await updateProfessionalPricing(profileId, rateNum, discountNum);
     setSaving(false);
     setSaved(true);
-    onSaved(rate);
+    onSaved(rateNum, discountNum);
   }
 
   return (
@@ -411,29 +423,49 @@ function HourlyRateCard({
         </span>
         <div>
           <h2 className="font-heading text-sm font-semibold text-slate-900">
-            Tarif Konsultasi per Jam
+            Tarif & Diskon Konsultasi per Jam
           </h2>
           <p className="mt-0.5 text-xs text-slate-600">
-            Sebagai Psikolog Profesional, pasien membayar langsung sesuai tarif yang kamu tentukan
-            di sini.
+            Sebagai Psikolog Profesional, pasien membayar langsung sesuai tarif (dikurangi diskon
+            jika ada) yang kamu tentukan di sini.
           </p>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-          <span className="text-sm text-slate-500">Rp</span>
-          <input
-            type="number"
-            min={0}
-            value={value}
-            onChange={(e) => {
-              setValue(e.target.value);
-              setSaved(false);
-            }}
-            placeholder="250000"
-            className="w-32 text-sm outline-none"
-          />
-          <span className="text-sm text-slate-400">/ jam</span>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Tarif per jam</label>
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <span className="text-sm text-slate-500">Rp</span>
+            <input
+              type="number"
+              min={0}
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="250000"
+              className="w-28 text-sm outline-none"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Diskon</label>
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={discountValue}
+              onChange={(e) => {
+                setDiscountValue(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="0"
+              className="w-16 text-sm outline-none"
+            />
+            <span className="text-sm text-slate-400">%</span>
+          </div>
         </div>
         <button
           onClick={handleSave}
@@ -441,9 +473,14 @@ function HourlyRateCard({
           className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
         >
           {saving && <Loader2 size={13} className="animate-spin" />}
-          {saved ? "Tersimpan" : "Simpan Tarif"}
+          {saved ? "Tersimpan" : "Simpan"}
         </button>
       </div>
+      {discountNum > 0 && rateNum > 0 && (
+        <p className="mt-2 text-xs text-slate-600">
+          Pasien akan membayar <strong>{formatIDR(finalRate)}</strong> per jam setelah diskon.
+        </p>
+      )}
     </div>
   );
 }
