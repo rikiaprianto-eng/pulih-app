@@ -21,6 +21,10 @@ import {
   Settings,
   Upload,
   ShieldCheck,
+  Stethoscope,
+  FileText,
+  Image as ImageIconOutline,
+  ExternalLink,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { useRequireAuth } from "@/lib/useAuth";
@@ -49,10 +53,17 @@ import {
   createUserAsAdmin,
   setOnlineStatus,
   setPsychologistVerification,
+  fetchVerificationRequirements,
+  createRequirement,
+  deleteRequirement,
+  fetchAllSubmissions,
+  fetchSignedCredentialUrl,
   AdminUserView,
   PendingPaymentView,
   AdminStats,
   SiteSettings,
+  VerificationRequirement,
+  SubmissionAnswer,
 } from "@/lib/queries";
 import type { Banner, Package, EventItem } from "@/lib/data";
 import { formatIDR } from "@/lib/utils";
@@ -67,6 +78,7 @@ const navItems = [
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "users", label: "Manajemen User", icon: Users },
+  { id: "psychologists", label: "Manajemen Psikolog", icon: Stethoscope },
   { id: "payments", label: "Manajemen Pembayaran", icon: CreditCard },
   { id: "content", label: "Manajemen Konten", icon: ImageIcon },
   { id: "pricing", label: "Manajemen Harga", icon: Tag },
@@ -108,6 +120,9 @@ export default function AdminPage() {
   const [updatingVerifyId, setUpdatingVerifyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [secretConfigured, setSecretConfigured] = useState(false);
+  const [requirements, setRequirements] = useState<VerificationRequirement[]>([]);
+  const [submissions, setSubmissions] = useState<Record<string, SubmissionAnswer[]>>({});
+  const [addingRequirement, setAddingRequirement] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
@@ -126,7 +141,9 @@ export default function AdminPage() {
       fetchEvents(),
       fetchSiteSettings(),
       fetchPaymentSecretStatus(),
-    ]).then(([u, p, s, b, pkgs, ev, settingsData, secretStatus]) => {
+      fetchVerificationRequirements(),
+      fetchAllSubmissions(),
+    ]).then(([u, p, s, b, pkgs, ev, settingsData, secretStatus, reqs, subs]) => {
       setUsers(u);
       setPayments(p);
       setStats(s);
@@ -135,6 +152,8 @@ export default function AdminPage() {
       setEvents(ev);
       setSettings(settingsData);
       setSecretConfigured(secretStatus.configured);
+      setRequirements(reqs);
+      setSubmissions(subs);
       setLoading(false);
     });
   }
@@ -222,6 +241,23 @@ export default function AdminPage() {
     await setPsychologistVerification(userId, status);
     await reload();
     setUpdatingVerifyId(null);
+  }
+
+  async function handleCreateRequirement(fields: {
+    label: string;
+    description: string;
+    inputType: "text" | "photo";
+    isRequired: boolean;
+  }) {
+    await createRequirement(fields);
+    setAddingRequirement(false);
+    reload();
+  }
+
+  async function handleDeleteRequirement(id: string) {
+    if (!confirm("Hapus syarat ini? Jawaban psikolog untuk syarat ini juga akan hilang.")) return;
+    await deleteRequirement(id);
+    setRequirements((prev) => prev.filter((r) => r.id !== id));
   }
 
   async function handleCreateUser(fields: {
@@ -446,6 +482,18 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {tab === "psychologists" && (
+                <PsychologistsTab
+                  users={users}
+                  requirements={requirements}
+                  submissions={submissions}
+                  updatingVerifyId={updatingVerifyId}
+                  onVerify={handleVerifyPsychologist}
+                  onAddRequirement={() => setAddingRequirement(true)}
+                  onDeleteRequirement={handleDeleteRequirement}
+                />
               )}
 
               {tab === "payments" && (
@@ -695,6 +743,12 @@ export default function AdminPage() {
       )}
       {addingBanner && (
         <AddBannerModal onCancel={() => setAddingBanner(false)} onSave={handleCreateBanner} />
+      )}
+      {addingRequirement && (
+        <AddRequirementModal
+          onCancel={() => setAddingRequirement(false)}
+          onSave={handleCreateRequirement}
+        />
       )}
     </div>
   );
@@ -1441,5 +1495,261 @@ function SettingsTab({
         </SettingsCard>
       </div>
     </div>
+  );
+}
+
+function PsychologistsTab({
+  users,
+  requirements,
+  submissions,
+  updatingVerifyId,
+  onVerify,
+  onAddRequirement,
+  onDeleteRequirement,
+}: {
+  users: AdminUserView[];
+  requirements: VerificationRequirement[];
+  submissions: Record<string, SubmissionAnswer[]>;
+  updatingVerifyId: string | null;
+  onVerify: (userId: string, status: "verified" | "rejected") => Promise<void>;
+  onAddRequirement: () => void;
+  onDeleteRequirement: (id: string) => Promise<void>;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const psychologists = users.filter((u) => u.rawRole === "psychologist");
+
+  return (
+    <div>
+      <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Psikolog</h1>
+      <p className="mt-1 text-sm text-slate-500">
+        Atur syarat pendaftaran dan tinjau berkas yang dikirim calon psikolog sebelum diverifikasi.
+      </p>
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-heading text-sm font-semibold text-slate-900">
+          Syarat Pendaftaran ({requirements.length})
+        </h2>
+        <button
+          onClick={onAddRequirement}
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white"
+        >
+          <Plus size={14} /> Tambah Syarat
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {requirements.map((r) => (
+          <div
+            key={r.id}
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+              {r.inputType === "photo" ? <ImageIconOutline size={16} /> : <FileText size={16} />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-800">
+                {r.label} {r.isRequired && <span className="text-red-500">*</span>}
+              </p>
+              {r.description && (
+                <p className="truncate text-xs text-slate-500">{r.description}</p>
+              )}
+            </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+              {r.inputType === "photo" ? "Foto" : "Teks"}
+            </span>
+            <button
+              onClick={() => onDeleteRequirement(r.id)}
+              className="flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+            >
+              <Trash2 size={13} /> Hapus
+            </button>
+          </div>
+        ))}
+        {requirements.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+            Belum ada syarat. Tambahkan minimal satu supaya psikolog tahu apa yang perlu dilampirkan.
+          </p>
+        )}
+      </div>
+
+      <h2 className="mt-8 font-heading text-sm font-semibold text-slate-900">
+        Peninjauan Pendaftar ({psychologists.length})
+      </h2>
+      <div className="mt-3 space-y-3">
+        {psychologists.map((u) => {
+          const answers = submissions[u.id] ?? [];
+          const answeredCount = requirements.filter((r) =>
+            answers.some((a) => a.requirementId === r.id && (a.textValue || a.filePath))
+          ).length;
+          const isOpen = expandedId === u.id;
+          return (
+            <div key={u.id} className="rounded-2xl border border-slate-100 bg-white p-4">
+              <button
+                onClick={() => setExpandedId(isOpen ? null : u.id)}
+                className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{u.name}</p>
+                  <p className="text-xs text-slate-500">
+                    {u.email} &middot; {answeredCount}/{requirements.length} syarat terisi
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userStatusStyle[u.status]}`}>
+                  {u.status}
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                  {requirements.map((r) => {
+                    const answer = answers.find((a) => a.requirementId === r.id);
+                    return (
+                      <div key={r.id} className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs font-semibold text-slate-600">
+                          {r.label} {r.isRequired && <span className="text-red-500">*</span>}
+                        </p>
+                        {r.inputType === "photo" ? (
+                          answer?.filePath ? (
+                            <ViewCredentialButton path={answer.filePath} />
+                          ) : (
+                            <p className="mt-1 text-xs text-slate-400">Belum diunggah.</p>
+                          )
+                        ) : (
+                          <p className="mt-1 text-sm text-slate-800">
+                            {answer?.textValue || (
+                              <span className="text-xs text-slate-400">Belum diisi.</span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => onVerify(u.id, "verified")}
+                      disabled={updatingVerifyId === u.id || u.status === "Aktif"}
+                      className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {updatingVerifyId === u.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Check size={13} />
+                      )}
+                      Verifikasi Psikolog
+                    </button>
+                    <button
+                      onClick={() => onVerify(u.id, "rejected")}
+                      disabled={updatingVerifyId === u.id || u.status !== "Aktif"}
+                      className="flex items-center gap-1.5 rounded-full border border-red-100 px-4 py-2 text-xs font-semibold text-red-600 disabled:opacity-50"
+                    >
+                      <XIcon size={13} /> Tangguhkan
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {psychologists.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+            Belum ada psikolog yang mendaftar.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ViewCredentialButton({ path }: { path: string }) {
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <button
+      onClick={async () => {
+        setLoading(true);
+        const url = await fetchSignedCredentialUrl(path);
+        setLoading(false);
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        else alert("Gagal membuka dokumen.");
+      }}
+      disabled={loading}
+      className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+    >
+      {loading ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+      Lihat Dokumen
+    </button>
+  );
+}
+
+function AddRequirementModal({
+  onCancel,
+  onSave,
+}: {
+  onCancel: () => void;
+  onSave: (fields: {
+    label: string;
+    description: string;
+    inputType: "text" | "photo";
+    isRequired: boolean;
+  }) => Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    label: "",
+    description: "",
+    inputType: "text" as "text" | "photo",
+    isRequired: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <ModalShell
+      title="Tambah Syarat Pendaftaran"
+      submitLabel="Tambahkan"
+      onCancel={onCancel}
+      saving={saving}
+      onSubmit={async () => {
+        if (!form.label.trim()) {
+          setError("Nama syarat wajib diisi.");
+          return;
+        }
+        setError(null);
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      }}
+    >
+      <Field
+        label="Nama Syarat"
+        value={form.label}
+        onChange={(v) => setForm({ ...form, label: v })}
+      />
+      <Field
+        label="Deskripsi (opsional)"
+        value={form.description}
+        onChange={(v) => setForm({ ...form, description: v })}
+      />
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Tipe Jawaban</label>
+        <select
+          value={form.inputType}
+          onChange={(e) => setForm({ ...form, inputType: e.target.value as "text" | "photo" })}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+        >
+          <option value="text">Teks</option>
+          <option value="photo">Foto / Dokumen</option>
+        </select>
+      </div>
+      <label className="flex items-center gap-2 text-xs text-slate-600">
+        <input
+          type="checkbox"
+          checked={form.isRequired}
+          onChange={(e) => setForm({ ...form, isRequired: e.target.checked })}
+        />
+        Wajib diisi
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </ModalShell>
   );
 }

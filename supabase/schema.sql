@@ -118,6 +118,30 @@ create table if not exists public.psychologist_specializations (
   primary key (psychologist_id, specialization_id)
 );
 
+-- Admin-managed checklist of what a psychologist must submit before verification
+-- (e.g. "Ijazah S1 Psikologi", "STR/SIPP", "Foto KTP") — configurable, not hardcoded.
+create table if not exists public.verification_requirements (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  description text,
+  input_type text not null default 'text' check (input_type in ('text', 'photo')),
+  is_required boolean not null default true,
+  sort_order integer not null default 0,
+  is_active boolean not null default true
+);
+
+-- One row per (psychologist, requirement) answer. text_value for input_type='text',
+-- file_path (private storage path, not a public URL) for input_type='photo'.
+create table if not exists public.psychologist_submissions (
+  id uuid primary key default gen_random_uuid(),
+  psychologist_id uuid references public.profiles (id) on delete cascade,
+  requirement_id uuid references public.verification_requirements (id) on delete cascade,
+  text_value text,
+  file_path text,
+  submitted_at timestamptz not null default now(),
+  unique (psychologist_id, requirement_id)
+);
+
 -- ----------------------------------------------------------------------------
 -- 3. PACKAGES (pricing) & CMS (banners, events)
 -- ----------------------------------------------------------------------------
@@ -257,6 +281,8 @@ alter table public.profiles enable row level security;
 alter table public.psychologist_profiles enable row level security;
 alter table public.specializations enable row level security;
 alter table public.psychologist_specializations enable row level security;
+alter table public.verification_requirements enable row level security;
+alter table public.psychologist_submissions enable row level security;
 alter table public.packages enable row level security;
 alter table public.banners enable row level security;
 alter table public.events enable row level security;
@@ -308,6 +334,28 @@ create policy "psychologist manages own row" on public.psychologist_profiles
 drop policy if exists "self insert psychologist profile" on public.psychologist_profiles;
 create policy "self insert psychologist profile" on public.psychologist_profiles
   for insert with check (auth.uid() = id);
+
+-- Verification requirements: everyone can read the checklist (needed to render the
+-- signup/registration form), only admins can define what's on it.
+drop policy if exists "public read verification_requirements" on public.verification_requirements;
+create policy "public read verification_requirements" on public.verification_requirements
+  for select using (true);
+drop policy if exists "admin writes verification_requirements" on public.verification_requirements;
+create policy "admin writes verification_requirements" on public.verification_requirements
+  for insert with check (public.is_admin());
+drop policy if exists "admin updates verification_requirements" on public.verification_requirements;
+create policy "admin updates verification_requirements" on public.verification_requirements
+  for update using (public.is_admin());
+drop policy if exists "admin deletes verification_requirements" on public.verification_requirements;
+create policy "admin deletes verification_requirements" on public.verification_requirements
+  for delete using (public.is_admin());
+
+-- Psychologist submissions: a psychologist manages their own answers; admin can
+-- read all of them (to review) but never needs to write on someone else's behalf.
+drop policy if exists "psychologist manages own submissions" on public.psychologist_submissions;
+create policy "psychologist manages own submissions" on public.psychologist_submissions
+  for all using (auth.uid() = psychologist_id or public.is_admin())
+  with check (auth.uid() = psychologist_id);
 
 -- Packages / banners / events: only admins can write.
 drop policy if exists "admin writes packages" on public.packages;
@@ -444,6 +492,52 @@ create policy "admin update banner images" on storage.objects
 drop policy if exists "admin delete banner images" on storage.objects;
 create policy "admin delete banner images" on storage.objects
   for delete using (bucket_id = 'banners' and public.is_admin());
+
+-- ============================================================================
+-- STORAGE — private bucket for psychologist verification documents (certificates,
+-- diplomas, ID photos). NOT public — files live under `{psychologist_id}/...` and
+-- only that psychologist or an admin can read/write them. The app reads these via
+-- short-lived signed URLs, never a public getPublicUrl().
+-- ============================================================================
+insert into storage.buckets (id, name, public)
+values ('credentials', 'credentials', false)
+on conflict (id) do nothing;
+
+drop policy if exists "own credential upload" on storage.objects;
+create policy "own credential upload" on storage.objects
+  for insert with check (
+    bucket_id = 'credentials' and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "own or admin credential read" on storage.objects;
+create policy "own or admin credential read" on storage.objects
+  for select using (
+    bucket_id = 'credentials'
+    and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin())
+  );
+
+drop policy if exists "own credential update" on storage.objects;
+create policy "own credential update" on storage.objects
+  for update using (
+    bucket_id = 'credentials' and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "own or admin credential delete" on storage.objects;
+create policy "own or admin credential delete" on storage.objects
+  for delete using (
+    bucket_id = 'credentials'
+    and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin())
+  );
+
+-- Seed a sensible default checklist — admin can edit/add/remove these anytime from
+-- Admin → Manajemen Psikolog.
+insert into public.verification_requirements (id, label, description, input_type, is_required, sort_order) values
+  ('00000000-0000-4000-8000-000000000301', 'Nama Lengkap & Gelar', 'Sesuai ijazah, contoh: Dra. Ani Wijaya, M.Psi., Psikolog', 'text', true, 1),
+  ('00000000-0000-4000-8000-000000000302', 'Nomor STR/SIPP', 'Surat Tanda Registrasi / Surat Izin Praktik Psikolog', 'text', true, 2),
+  ('00000000-0000-4000-8000-000000000303', 'Foto Ijazah Pendidikan Psikologi', 'Unggah foto/scan ijazah S1/S2 Psikologi', 'photo', true, 3),
+  ('00000000-0000-4000-8000-000000000304', 'Foto STR/SIPP', 'Unggah foto/scan dokumen STR atau SIPP', 'photo', true, 4),
+  ('00000000-0000-4000-8000-000000000305', 'Foto KTP', 'Untuk verifikasi identitas', 'photo', true, 5)
+on conflict (id) do nothing;
 
 -- Note: demo psychologist accounts (with real auth.users rows + login access) are
 -- NOT seeded here because Supabase Auth users must be created via the Auth API,

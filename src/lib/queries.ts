@@ -327,6 +327,18 @@ export async function fetchIsOnline(psychologistId: string): Promise<boolean> {
   return data?.is_online ?? false;
 }
 
+export async function fetchMyVerificationStatus(
+  psychologistId: string
+): Promise<"pending" | "verified" | "rejected"> {
+  const { data } = await supabase
+    .from("psychologist_profiles")
+    .select("verification_status")
+    .eq("id", psychologistId)
+    .maybeSingle();
+  const status = data?.verification_status;
+  return status === "verified" || status === "rejected" ? status : "pending";
+}
+
 export type AppointmentView = {
   id: string;
   patientName: string;
@@ -816,4 +828,139 @@ export async function fetchPaymentSecretStatus(): Promise<{ configured: boolean 
   });
   if (!res.ok) return { configured: false };
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Psychologist verification requirements & submissions
+// ---------------------------------------------------------------------------
+
+export type VerificationRequirement = {
+  id: string;
+  label: string;
+  description: string;
+  inputType: "text" | "photo";
+  isRequired: boolean;
+  sortOrder: number;
+};
+
+export async function fetchVerificationRequirements(): Promise<VerificationRequirement[]> {
+  const { data, error } = await supabase
+    .from("verification_requirements")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (error || !data) return [];
+  return data.map((r) => ({
+    id: r.id,
+    label: r.label,
+    description: r.description ?? "",
+    inputType: r.input_type === "photo" ? "photo" : "text",
+    isRequired: r.is_required,
+    sortOrder: r.sort_order,
+  }));
+}
+
+export async function createRequirement(fields: {
+  label: string;
+  description: string;
+  inputType: "text" | "photo";
+  isRequired: boolean;
+}) {
+  const { data: rows } = await supabase
+    .from("verification_requirements")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSortOrder = (rows?.[0]?.sort_order ?? 0) + 1;
+  await supabase.from("verification_requirements").insert({
+    label: fields.label,
+    description: fields.description,
+    input_type: fields.inputType,
+    is_required: fields.isRequired,
+    sort_order: nextSortOrder,
+  });
+}
+
+export async function deleteRequirement(id: string) {
+  await supabase.from("verification_requirements").delete().eq("id", id);
+}
+
+export type SubmissionAnswer = {
+  requirementId: string;
+  textValue: string | null;
+  filePath: string | null;
+  submittedAt: string | null;
+};
+
+/** All of the logged-in psychologist's own submitted answers (used to render their progress). */
+export async function fetchMySubmissions(psychologistId: string): Promise<SubmissionAnswer[]> {
+  const { data, error } = await supabase
+    .from("psychologist_submissions")
+    .select("requirement_id, text_value, file_path, submitted_at")
+    .eq("psychologist_id", psychologistId);
+  if (error || !data) return [];
+  return data.map((s) => ({
+    requirementId: s.requirement_id,
+    textValue: s.text_value,
+    filePath: s.file_path,
+    submittedAt: s.submitted_at,
+  }));
+}
+
+export async function submitTextAnswer(psychologistId: string, requirementId: string, text: string) {
+  await supabase.from("psychologist_submissions").upsert(
+    {
+      psychologist_id: psychologistId,
+      requirement_id: requirementId,
+      text_value: text,
+      file_path: null,
+      submitted_at: new Date().toISOString(),
+    },
+    { onConflict: "psychologist_id,requirement_id" }
+  );
+}
+
+export async function submitPhotoAnswer(psychologistId: string, requirementId: string, file: File) {
+  const ext = file.name.split(".").pop();
+  const path = `${psychologistId}/${requirementId}-${Date.now()}.${ext}`;
+  const { error: uploadError } = await supabase.storage.from("credentials").upload(path, file, {
+    upsert: true,
+  });
+  if (uploadError) throw uploadError;
+
+  await supabase.from("psychologist_submissions").upsert(
+    {
+      psychologist_id: psychologistId,
+      requirement_id: requirementId,
+      text_value: null,
+      file_path: path,
+      submitted_at: new Date().toISOString(),
+    },
+    { onConflict: "psychologist_id,requirement_id" }
+  );
+}
+
+export async function fetchSignedCredentialUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from("credentials").createSignedUrl(path, 300);
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
+/** Admin view: every psychologist's submissions, keyed by psychologist id. */
+export async function fetchAllSubmissions(): Promise<Record<string, SubmissionAnswer[]>> {
+  const { data, error } = await supabase
+    .from("psychologist_submissions")
+    .select("psychologist_id, requirement_id, text_value, file_path, submitted_at");
+  if (error || !data) return {};
+  const grouped: Record<string, SubmissionAnswer[]> = {};
+  for (const s of data) {
+    if (!grouped[s.psychologist_id]) grouped[s.psychologist_id] = [];
+    grouped[s.psychologist_id].push({
+      requirementId: s.requirement_id,
+      textValue: s.text_value,
+      filePath: s.file_path,
+      submittedAt: s.submitted_at,
+    });
+  }
+  return grouped;
 }
