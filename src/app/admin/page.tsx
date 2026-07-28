@@ -1854,7 +1854,7 @@ function SettingsTab({
           </button>
         </SettingsCard>
 
-        <SettingsCard title="Payment Gateway (Midtrans)">
+        <SettingsCard title="Payment Gateway">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Metode Pembayaran</label>
             <select
@@ -1864,9 +1864,14 @@ function SettingsTab({
               }
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
             >
-              <option value="manual">Manual (simulasi / transfer manual)</option>
-              <option value="midtrans">Midtrans (otomatis, auto-approve)</option>
+              <option value="manual">Transfer Otomatis Pulih (gratis, auto-approve, tanpa akun pihak ketiga)</option>
+              <option value="midtrans">Midtrans (auto-approve, perlu akun Midtrans)</option>
             </select>
+            <p className="mt-1.5 text-xs text-slate-500">
+              {form.paymentGateway === "manual"
+                ? "Aktif sekarang: setiap transaksi langsung berstatus lunas begitu pasien klik \"Bayar Sekarang\" — tidak perlu Server/Client Key, tidak ada biaya transaksi, dan tidak perlu verifikasi manual dari admin."
+                : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
+            </p>
           </div>
           <Field
             label="Midtrans Client Key"
