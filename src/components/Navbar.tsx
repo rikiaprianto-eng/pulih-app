@@ -49,7 +49,7 @@ export default function Navbar() {
                 href={roleHome(profile.role)}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
-                Dashboard
+                Beranda
               </Link>
               <button
                 onClick={handleLogout}
@@ -107,7 +107,7 @@ export default function Navbar() {
                     onClick={() => setOpen(false)}
                     className="rounded-full border border-slate-200 px-4 py-2 text-center text-sm font-semibold text-slate-700"
                   >
-                    Dashboard
+                    Beranda
                   </Link>
                   <button
                     onClick={handleLogout}

@@ -78,18 +78,18 @@ const MAX_EVENTS = 5;
 const MAX_FACILITIES = 10;
 
 const navItems = [
-  { label: "Dashboard", href: "/admin" },
+  { label: "Beranda", href: "/admin" },
   { label: "Profil", href: "/profil" },
 ];
 
 const tabs = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "users", label: "Manajemen User", icon: Users },
+  { id: "overview", label: "Ringkasan", icon: LayoutDashboard },
+  { id: "users", label: "Manajemen Pengguna", icon: Users },
   { id: "psychologists", label: "Manajemen Psikolog", icon: Stethoscope },
   { id: "payments", label: "Manajemen Pembayaran", icon: CreditCard },
   { id: "content", label: "Manajemen Konten", icon: ImageIcon },
   { id: "pricing", label: "Manajemen Harga", icon: Tag },
-  { id: "settings", label: "Setting", icon: Settings },
+  { id: "settings", label: "Pengaturan", icon: Settings },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -227,7 +227,7 @@ export default function AdminPage() {
   }
 
   async function handleDeleteEvent(id: string) {
-    if (!confirm("Hapus event ini?")) return;
+    if (!confirm("Hapus acara ini?")) return;
     await deleteEvent(id);
     setEvents((prev) => prev.filter((e) => e.id !== id));
   }
@@ -255,7 +255,8 @@ export default function AdminPage() {
     role: "patient" | "psychologist" | "admin",
     userName: string
   ) {
-    if (!confirm(`Ubah role ${userName} menjadi "${role}"?`)) return;
+    const roleLabel = roleOptions.find((r) => r.value === role)?.label ?? role;
+    if (!confirm(`Ubah peran ${userName} menjadi "${roleLabel}"?`)) return;
     setUpdatingRoleId(userId);
     await updateUserRole(userId, role);
     await reload();
@@ -380,7 +381,7 @@ export default function AdminPage() {
             <>
               {tab === "overview" && stats && (
                 <div>
-                  <h1 className="font-heading text-xl font-bold text-slate-900">Dashboard Admin</h1>
+                  <h1 className="font-heading text-xl font-bold text-slate-900">Beranda Admin</h1>
                   <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
                     <StatCard icon={<UserCheck size={18} />} label="Total Pengguna" value={stats.totalUsers.toLocaleString("id-ID")} />
                     <StatCard icon={<Users size={18} />} label="Total Psikolog" value={stats.totalPsychologists.toString()} />
@@ -404,14 +405,14 @@ export default function AdminPage() {
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen User</h1>
+                      <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Pengguna</h1>
                       <p className="mt-1 text-sm text-slate-500">Kelola akun pasien, psikolog, dan admin.</p>
                     </div>
                     <button
                       onClick={() => setAddingUser(true)}
                       className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white"
                     >
-                      <Plus size={14} /> Tambah User
+                      <Plus size={14} /> Tambah Pengguna
                     </button>
                   </div>
 
@@ -605,7 +606,7 @@ export default function AdminPage() {
               {tab === "content" && (
                 <div>
                   <h1 className="font-heading text-xl font-bold text-slate-900">Manajemen Konten</h1>
-                  <p className="mt-1 text-sm text-slate-500">Kelola banner Hero Section, event, dan frame fasilitas pada halaman utama.</p>
+                  <p className="mt-1 text-sm text-slate-500">Kelola banner utama, acara, dan frame fasilitas pada halaman utama.</p>
 
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-heading text-sm font-semibold text-slate-900">Banner</h2>
@@ -653,16 +654,16 @@ export default function AdminPage() {
                   <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h2 className="font-heading text-sm font-semibold text-slate-900">
-                        Event ({events.length}/{MAX_EVENTS})
+                        Acara ({events.length}/{MAX_EVENTS})
                       </h2>
-                      <p className="text-xs text-slate-500">Maksimal {MAX_EVENTS} event aktif ditampilkan.</p>
+                      <p className="text-xs text-slate-500">Maksimal {MAX_EVENTS} acara aktif ditampilkan.</p>
                     </div>
                     <button
                       onClick={() => setAddingEvent(true)}
                       disabled={events.length >= MAX_EVENTS}
                       className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <Plus size={14} /> Tambah Event
+                      <Plus size={14} /> Tambah Acara
                     </button>
                   </div>
 
@@ -691,7 +692,7 @@ export default function AdminPage() {
                     ))}
                     {events.length === 0 && (
                       <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
-                        Belum ada event.
+                        Belum ada acara.
                       </p>
                     )}
                   </div>
@@ -1022,6 +1023,7 @@ function ModalShell({
   onSubmit,
   saving,
   submitLabel = "Simpan",
+  wide = false,
 }: {
   title: string;
   children: React.ReactNode;
@@ -1029,12 +1031,15 @@ function ModalShell({
   onSubmit: () => void;
   saving: boolean;
   submitLabel?: string;
+  wide?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6">
+      <div
+        className={`w-full rounded-2xl bg-white p-6 ${wide ? "max-w-xl max-h-[90vh] overflow-y-auto" : "max-w-sm"}`}
+      >
         <h3 className="font-heading text-lg font-semibold text-slate-900">{title}</h3>
-        <div className="mt-4 space-y-3">{children}</div>
+        <div className="mt-4 space-y-4">{children}</div>
         <div className="mt-5 flex gap-2">
           <button
             onClick={onSubmit}
@@ -1097,6 +1102,7 @@ function EditPackageModal({
   return (
     <ModalShell
       title="Edit Paket"
+      wide
       onCancel={onCancel}
       saving={saving}
       onSubmit={async () => {
@@ -1106,42 +1112,58 @@ function EditPackageModal({
       }}
     >
       <Field label="Nama Paket" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-      <Field
-        label="Harga (Rp)"
-        type="number"
-        value={String(form.price)}
-        onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
-      />
-      <Field
-        label="Harga Asli sebelum diskon (Rp, opsional)"
-        type="number"
-        value={form.originalPrice ? String(form.originalPrice) : ""}
-        onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
-      />
-      <PriceBreakdown price={form.price} adminFee={adminFee} />
-      <Field
-        label="Durasi (menit)"
-        type="number"
-        value={String(form.durationMinutes)}
-        onChange={(v) => setForm({ ...form, durationMinutes: Number(v) || 0 })}
-      />
-      <Field
-        label="Kuota Sesi"
-        type="number"
-        value={String(form.sessionQuota)}
-        onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
-      />
-      <Field
-        label="Kode Kupon Diskon (opsional)"
-        value={form.couponCode}
-        onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
-      />
-      <Field
-        label="Nilai Kupon (Rp)"
-        type="number"
-        value={String(form.couponDiscountAmount)}
-        onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
-      />
+
+      <ModalSection label="Harga">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Harga (Rp)"
+            type="number"
+            value={String(form.price)}
+            onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
+          />
+          <Field
+            label="Harga Asli (opsional)"
+            type="number"
+            value={form.originalPrice ? String(form.originalPrice) : ""}
+            onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
+          />
+        </div>
+        <PriceBreakdown price={form.price} adminFee={adminFee} />
+      </ModalSection>
+
+      <ModalSection label="Durasi & Kuota">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Durasi (menit)"
+            type="number"
+            value={String(form.durationMinutes)}
+            onChange={(v) => setForm({ ...form, durationMinutes: Number(v) || 0 })}
+          />
+          <Field
+            label="Kuota Sesi"
+            type="number"
+            value={String(form.sessionQuota)}
+            onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
+          />
+        </div>
+      </ModalSection>
+
+      <ModalSection label="Kupon Diskon (opsional)">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Kode Kupon"
+            value={form.couponCode}
+            onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
+          />
+          <Field
+            label="Nilai Kupon (Rp)"
+            type="number"
+            value={String(form.couponDiscountAmount)}
+            onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
+          />
+        </div>
+      </ModalSection>
+
       <p className="text-[11px] text-slate-400">
         Harga otomatis dibulatkan ke atas ke kelipatan Rp1.000 saat disimpan (untuk gateway
         Lynk.id).
@@ -1174,6 +1196,7 @@ function AddPackageModal({
     <ModalShell
       title="Tambah Paket"
       submitLabel="Tambahkan"
+      wide
       onCancel={onCancel}
       saving={saving}
       onSubmit={async () => {
@@ -1189,47 +1212,72 @@ function AddPackageModal({
         value={form.description}
         onChange={(v) => setForm({ ...form, description: v })}
       />
-      <Field
-        label="Harga (Rp)"
-        type="number"
-        value={String(form.price)}
-        onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
-      />
-      <Field
-        label="Harga Asli sebelum diskon (Rp, opsional)"
-        type="number"
-        value={form.originalPrice ? String(form.originalPrice) : ""}
-        onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
-      />
-      <PriceBreakdown price={form.price} adminFee={adminFee} />
-      <Field
-        label="Durasi (menit)"
-        type="number"
-        value={String(form.durationMinutes)}
-        onChange={(v) => setForm({ ...form, durationMinutes: Number(v) || 0 })}
-      />
-      <Field
-        label="Kuota Sesi"
-        type="number"
-        value={String(form.sessionQuota)}
-        onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
-      />
-      <Field
-        label="Kode Kupon Diskon (opsional)"
-        value={form.couponCode ?? ""}
-        onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
-      />
-      <Field
-        label="Nilai Kupon (Rp)"
-        type="number"
-        value={String(form.couponDiscountAmount ?? 0)}
-        onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
-      />
+
+      <ModalSection label="Harga">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Harga (Rp)"
+            type="number"
+            value={String(form.price)}
+            onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
+          />
+          <Field
+            label="Harga Asli (opsional)"
+            type="number"
+            value={form.originalPrice ? String(form.originalPrice) : ""}
+            onChange={(v) => setForm({ ...form, originalPrice: v ? Number(v) || undefined : undefined })}
+          />
+        </div>
+        <PriceBreakdown price={form.price} adminFee={adminFee} />
+      </ModalSection>
+
+      <ModalSection label="Durasi & Kuota">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Durasi (menit)"
+            type="number"
+            value={String(form.durationMinutes)}
+            onChange={(v) => setForm({ ...form, durationMinutes: Number(v) || 0 })}
+          />
+          <Field
+            label="Kuota Sesi"
+            type="number"
+            value={String(form.sessionQuota)}
+            onChange={(v) => setForm({ ...form, sessionQuota: Number(v) || 1 })}
+          />
+        </div>
+      </ModalSection>
+
+      <ModalSection label="Kupon Diskon (opsional)">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Kode Kupon"
+            value={form.couponCode ?? ""}
+            onChange={(v) => setForm({ ...form, couponCode: v.toUpperCase() })}
+          />
+          <Field
+            label="Nilai Kupon (Rp)"
+            type="number"
+            value={String(form.couponDiscountAmount ?? 0)}
+            onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
+          />
+        </div>
+      </ModalSection>
+
       <p className="text-[11px] text-slate-400">
         Harga otomatis dibulatkan ke atas ke kelipatan Rp1.000 saat disimpan (untuk gateway
         Lynk.id).
       </p>
     </ModalShell>
+  );
+}
+
+function ModalSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="space-y-3">{children}</div>
+    </div>
   );
 }
 
@@ -1288,7 +1336,7 @@ function EditBannerModal({
         )}
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari komputer"}
           <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
         </label>
         {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
@@ -1374,7 +1422,7 @@ function AddBannerModal({
         )}
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari komputer"}
           <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
         </label>
         {!form.image && (
@@ -1440,7 +1488,7 @@ function EditFacilityModal({
         )}
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari komputer"}
           <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
         </label>
         {uploadError && <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>}
@@ -1519,7 +1567,7 @@ function AddFacilityModal({
         )}
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-600">
           {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          {uploading ? "Mengunggah..." : "Unggah gambar dari PC"}
+          {uploading ? "Mengunggah..." : "Unggah gambar dari komputer"}
           <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
         </label>
         {!form.image && (
@@ -1556,7 +1604,7 @@ function AddEventModal({
 
   return (
     <ModalShell
-      title="Tambah Event"
+      title="Tambah Acara"
       submitLabel="Tambahkan"
       onCancel={onCancel}
       saving={saving}
@@ -1567,7 +1615,7 @@ function AddEventModal({
         setSaving(false);
       }}
     >
-      <Field label="Judul Event" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+      <Field label="Judul Acara" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-600">Tipe</label>
         <select
@@ -1619,7 +1667,7 @@ function AddUserModal({
 
   return (
     <ModalShell
-      title="Tambah User"
+      title="Tambah Pengguna"
       submitLabel="Buat Akun"
       onCancel={onCancel}
       saving={saving}
@@ -1787,7 +1835,7 @@ function SettingsTab({
               ) : (
                 <Upload size={14} />
               )}
-              {uploadingLogo ? "Mengunggah..." : savingLogo ? "Menyimpan..." : "Unggah logo dari PC"}
+              {uploadingLogo ? "Mengunggah..." : savingLogo ? "Menyimpan..." : "Unggah logo dari komputer"}
               <input
                 type="file"
                 accept="image/*"
@@ -1879,7 +1927,7 @@ function SettingsTab({
           </button>
         </SettingsCard>
 
-        <SettingsCard title="Payment Gateway">
+        <SettingsCard title="Pengaturan Pembayaran">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Metode Pembayaran</label>
             <select
@@ -1892,16 +1940,16 @@ function SettingsTab({
               }
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
             >
-              <option value="manual">Transfer Otomatis Pulih (gratis, auto-approve, tanpa akun pihak ketiga)</option>
-              <option value="midtrans">Midtrans (auto-approve, perlu akun Midtrans)</option>
-              <option value="lynkid">Lynk.id (auto-approve via webhook, perlu akun Lynk.id)</option>
+              <option value="manual">Transfer Otomatis Pulih (gratis, disetujui otomatis, tanpa akun pihak ketiga)</option>
+              <option value="midtrans">Midtrans (disetujui otomatis, perlu akun Midtrans)</option>
+              <option value="lynkid">Lynk.id (disetujui otomatis lewat webhook, perlu akun Lynk.id)</option>
             </select>
             <p className="mt-1.5 text-xs text-slate-500">
               {form.paymentGateway === "manual"
                 ? "Aktif sekarang: setiap transaksi langsung berstatus lunas begitu pasien klik \"Bayar Sekarang\" — tidak perlu Server/Client Key, tidak ada biaya transaksi, dan tidak perlu verifikasi manual dari admin."
                 : form.paymentGateway === "lynkid"
-                  ? "Buat 1 produk di Lynk.id seharga Rp1.000 dan tempel link-nya di bawah — satu link ini dipakai untuk semua paket & semua psikolog. Jumlah (Qty) dan total harga terisi otomatis lewat link checkout yang dibuatkan sistem, jadi pasien tinggal klik Bayar tanpa mengubah apa pun. Isi juga Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
-                  : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
+                  ? "Buat 1 produk di Lynk.id seharga Rp1.000 dan tempel tautannya di bawah — satu tautan ini dipakai untuk semua paket & semua psikolog. Jumlah dan total harga terisi otomatis lewat tautan pembayaran yang dibuat sistem, jadi pasien tinggal klik Bayar tanpa mengubah apa pun. Isi juga Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke alamat yang tertera agar pembayaran disetujui otomatis."
+                  : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar persetujuan otomatis lewat webhook aktif. Tanpa keduanya, pembayaran akan gagal."}
             </p>
           </div>
           {form.paymentGateway === "lynkid" && (
@@ -1922,7 +1970,7 @@ function SettingsTab({
               checked={form.midtransIsProduction}
               onChange={(e) => setForm({ ...form, midtransIsProduction: e.target.checked })}
             />
-            Mode Production (nonaktifkan untuk pakai Sandbox/testing)
+            Mode Produksi (nonaktifkan untuk memakai mode uji coba/Sandbox)
           </label>
           <button
             onClick={async () => {
@@ -1997,8 +2045,9 @@ function SettingsTab({
             {lynkidConfigured ? "Merchant Key sudah diatur" : "Merchant Key belum diatur"}
           </div>
           <p className="text-xs text-slate-500">
-            Dipakai untuk memverifikasi webhook transaksi sukses dari Lynk.id. Atur webhook di
-            dashboard Lynk.id (Pengaturan &rarr; Integrasi &rarr; Webhook) ke URL:
+            Dipakai untuk memverifikasi notifikasi webhook transaksi sukses dari Lynk.id. Atur
+            webhook di panel Lynk.id (Pengaturan &rarr; Integrasi &rarr; Webhook) ke alamat
+            berikut:
           </p>
           <code className="block break-all rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
             https://pulih-app.netlify.app/.netlify/functions/lynk-webhook

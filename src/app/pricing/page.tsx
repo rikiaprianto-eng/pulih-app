@@ -150,7 +150,7 @@ export default function PricingPage() {
 
     if (useLynkid) {
       if (!settings?.lynkidProductUrl) {
-        setPayError("Link produk Lynk.id belum diatur admin di menu Setting.");
+        setPayError("Tautan produk Lynk.id belum diatur admin di menu Pengaturan.");
         setProcessing(false);
         return;
       }
@@ -276,7 +276,7 @@ export default function PricingPage() {
                         per sesi
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check size={15} className="text-teal-600" /> Chat selama sesi berlangsung
+                        <Check size={15} className="text-teal-600" /> Obrolan selama sesi berlangsung
                       </li>
                     </ul>
 
@@ -303,7 +303,7 @@ export default function PricingPage() {
                 onClick={() => setStep("package")}
                 className="mb-6 inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-700"
               >
-                <ArrowLeft size={15} /> Kembali pilih paket
+                <ArrowLeft size={15} /> Kembali ke pilihan paket
               </button>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -500,9 +500,9 @@ export default function PricingPage() {
                       {!profile
                         ? "Kamu akan diminta masuk terlebih dahulu sebelum membayar."
                         : useLynkid
-                          ? "Pembayaran diproses aman lewat Lynk.id — status terkonfirmasi otomatis via webhook."
+                          ? "Pembayaran diproses dengan aman melalui Lynk.id — status terkonfirmasi otomatis lewat webhook."
                           : useMidtrans
-                            ? "Pembayaran diproses aman lewat Midtrans — transaksi & langgananmu langsung tersimpan."
+                            ? "Pembayaran diproses dengan aman melalui Midtrans — transaksi & langgananmu langsung tersimpan."
                             : "Gratis tanpa biaya tambahan — pembayaran terkonfirmasi otomatis dan langgananmu langsung aktif."}
                     </p>
                   </div>
@@ -526,7 +526,7 @@ export default function PricingPage() {
                 onClick={() => router.push("/dashboard")}
                 className="mt-6 w-full rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white"
               >
-                Ke Dashboard
+                Ke Beranda
               </button>
             </div>
           )}

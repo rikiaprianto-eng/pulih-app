@@ -131,7 +131,7 @@ export default function BayarKonsultasiPage() {
 
     if (useLynkid) {
       if (!settings?.lynkidProductUrl) {
-        setPayError("Link produk Lynk.id belum diatur admin di menu Setting.");
+        setPayError("Tautan produk Lynk.id belum diatur admin di menu Pengaturan.");
         setProcessing(false);
         return;
       }
