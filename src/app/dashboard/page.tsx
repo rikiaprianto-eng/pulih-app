@@ -50,6 +50,8 @@ export default function DashboardPage() {
     const matchQuery = p.name.toLowerCase().includes(query.toLowerCase());
     return matchSpecialty && matchQuery;
   });
+  const temanCurhat = filtered.filter((p) => p.category !== "profesional");
+  const profesional = filtered.filter((p) => p.category === "profesional");
 
   const remainingQuota = subscription ? subscription.totalQuota - subscription.usedQuota : 0;
 
@@ -126,17 +128,47 @@ export default function DashboardPage() {
           <div className="mt-10 flex justify-center py-10">
             <Loader2 className="animate-spin text-teal-600" size={24} />
           </div>
+        ) : filtered.length === 0 ? (
+          <p className="mt-10 py-10 text-center text-sm text-slate-400">
+            Tidak ada psikolog yang cocok dengan pencarianmu.
+          </p>
         ) : (
-          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((psy) => (
-              <PsychologistCard key={psy.id} psy={psy} />
-            ))}
-            {filtered.length === 0 && (
-              <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                Tidak ada psikolog yang cocok dengan pencarianmu.
-              </p>
-            )}
-          </div>
+          <>
+            <div className="mt-6">
+              <h3 className="font-heading text-sm font-semibold text-slate-900">
+                Teman Curhat <span className="font-normal text-slate-400">— tarif sesuai paket</span>
+              </h3>
+              {temanCurhat.length === 0 ? (
+                <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
+                  Belum ada Teman Curhat yang cocok.
+                </p>
+              ) : (
+                <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {temanCurhat.map((psy) => (
+                    <PsychologistCard key={psy.id} psy={psy} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-10">
+              <h3 className="font-heading text-sm font-semibold text-slate-900">
+                Psikolog Profesional{" "}
+                <span className="font-normal text-slate-400">— bayar langsung sesuai tarif per jam</span>
+              </h3>
+              {profesional.length === 0 ? (
+                <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
+                  Belum ada Psikolog Profesional yang cocok.
+                </p>
+              ) : (
+                <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {profesional.map((psy) => (
+                    <PsychologistCard key={psy.id} psy={psy} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         <div className="mt-10 flex items-center justify-between rounded-2xl border border-dashed border-teal-200 bg-teal-50/60 p-5">

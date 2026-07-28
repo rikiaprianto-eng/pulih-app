@@ -13,6 +13,7 @@ import {
   Check,
   Clock,
   ShieldAlert,
+  PenLine,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { useRequireAuth } from "@/lib/useAuth";
@@ -24,6 +25,9 @@ import {
   fetchMyVerificationStatus,
   fetchVerificationRequirements,
   fetchMySubmissions,
+  fetchMyCategory,
+  fetchMyHourlyRate,
+  updateHourlyRate,
   submitTextAnswer,
   submitPhotoAnswer,
   addMedicalRecord,
@@ -57,6 +61,8 @@ export default function PsikologPage() {
   );
   const [requirements, setRequirements] = useState<VerificationRequirement[]>([]);
   const [mySubmissions, setMySubmissions] = useState<SubmissionAnswer[]>([]);
+  const [category, setCategory] = useState<"teman_curhat" | "profesional">("teman_curhat");
+  const [hourlyRate, setHourlyRate] = useState<number | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -73,13 +79,17 @@ export default function PsikologPage() {
       fetchMyVerificationStatus(profile.id),
       fetchVerificationRequirements(),
       fetchMySubmissions(profile.id),
-    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs]) => {
+      fetchMyCategory(profile.id),
+      fetchMyHourlyRate(profile.id),
+    ]).then(([sched, pts, isOnline, verifStatus, reqs, subs, cat, rate]) => {
       setSchedule(sched);
       setPatients(pts);
       setOnline(isOnline);
       setVerificationStatus(verifStatus);
       setRequirements(reqs);
       setMySubmissions(subs);
+      setCategory(cat);
+      setHourlyRate(rate);
       setLoading(false);
     });
   }
@@ -91,7 +101,8 @@ export default function PsikologPage() {
     await setOnlineStatus(profile.id, next);
   }
 
-  const answeredCount = requirements.filter((r) =>
+  const myRequirements = requirements.filter((r) => r.category === "both" || r.category === category);
+  const answeredCount = myRequirements.filter((r) =>
     mySubmissions.some((a) => a.requirementId === r.id && (a.textValue || a.filePath))
   ).length;
 
@@ -142,11 +153,19 @@ export default function PsikologPage() {
         {!loading && verificationStatus !== "verified" && (
           <RegistrationPanel
             status={verificationStatus}
-            requirements={requirements}
+            requirements={myRequirements}
             submissions={mySubmissions}
             answeredCount={answeredCount}
             profileId={profile.id}
             onSaved={reloadAll}
+          />
+        )}
+
+        {!loading && category === "profesional" && (
+          <HourlyRateCard
+            profileId={profile.id}
+            hourlyRate={hourlyRate}
+            onSaved={(rate) => setHourlyRate(rate)}
           />
         )}
 
@@ -251,6 +270,74 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
       </div>
       <p className="mt-3 font-heading text-lg font-bold text-slate-900">{value}</p>
       <p className="text-xs text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+function HourlyRateCard({
+  profileId,
+  hourlyRate,
+  onSaved,
+}: {
+  profileId: string;
+  hourlyRate: number | null;
+  onSaved: (rate: number) => void;
+}) {
+  const [value, setValue] = useState(hourlyRate ? String(hourlyRate) : "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    const rate = Number(value);
+    if (!rate || rate <= 0) return;
+    setSaving(true);
+    await updateHourlyRate(profileId, rate);
+    setSaving(false);
+    setSaved(true);
+    onSaved(rate);
+  }
+
+  return (
+    <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+          <PenLine size={20} />
+        </span>
+        <div>
+          <h2 className="font-heading text-sm font-semibold text-slate-900">
+            Tarif Konsultasi per Jam
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-600">
+            Sebagai Psikolog Profesional, pasien membayar langsung sesuai tarif yang kamu tentukan
+            di sini.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <span className="text-sm text-slate-500">Rp</span>
+          <input
+            type="number"
+            min={0}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setSaved(false);
+            }}
+            placeholder="250000"
+            className="w-32 text-sm outline-none"
+          />
+          <span className="text-sm text-slate-400">/ jam</span>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving || !value}
+          className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {saving && <Loader2 size={13} className="animate-spin" />}
+          {saved ? "Tersimpan" : "Simpan Tarif"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,10 @@ import type { Profile, Role } from "./supabase/types";
 export type { Role, Profile };
 
 const PENDING_ROLE_KEY = "pulih_pending_role";
+const PENDING_CATEGORY_KEY = "pulih_pending_category";
 const REDIRECT_AFTER_LOGIN_KEY = "pulih_redirect_after_login";
+
+export type PsychologistCategory = "teman_curhat" | "profesional";
 
 export function setPendingRole(role: Role) {
   window.localStorage.setItem(PENDING_ROLE_KEY, role);
@@ -16,6 +19,16 @@ export function consumePendingRole(): Role | null {
   const role = window.localStorage.getItem(PENDING_ROLE_KEY) as Role | null;
   window.localStorage.removeItem(PENDING_ROLE_KEY);
   return role;
+}
+
+export function setPendingCategory(category: PsychologistCategory) {
+  window.localStorage.setItem(PENDING_CATEGORY_KEY, category);
+}
+
+export function consumePendingCategory(): PsychologistCategory | null {
+  const category = window.localStorage.getItem(PENDING_CATEGORY_KEY) as PsychologistCategory | null;
+  window.localStorage.removeItem(PENDING_CATEGORY_KEY);
+  return category;
 }
 
 /** Remembers where to send the user after they finish logging in/signing up — used so
@@ -34,12 +47,13 @@ export async function signUpWithEmail(
   email: string,
   password: string,
   fullName: string,
-  role: Role
+  role: Role,
+  category?: PsychologistCategory
 ) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName, role } },
+    options: { data: { full_name: fullName, role, category } },
   });
   if (error) throw error;
   return data;
@@ -69,10 +83,14 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data;
 }
 
-export async function applyRoleAfterOAuth(userId: string, role: Role) {
+export async function applyRoleAfterOAuth(
+  userId: string,
+  role: Role,
+  category?: PsychologistCategory
+) {
   await supabase.from("profiles").update({ role }).eq("id", userId);
   if (role === "psychologist") {
-    await supabase.from("psychologist_profiles").upsert({ id: userId });
+    await supabase.from("psychologist_profiles").upsert({ id: userId, category: category ?? "teman_curhat" });
   }
 }
 

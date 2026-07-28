@@ -11,6 +11,8 @@ export type Banner = {
   image: string;
 };
 
+export type PsychologistCategory = "teman_curhat" | "profesional";
+
 export type Psychologist = {
   id: string;
   name: string;
@@ -23,6 +25,8 @@ export type Psychologist = {
   avatarSeed: string;
   price30: number;
   price60: number;
+  category: PsychologistCategory;
+  hourlyRate: number | null;
 };
 
 export type Package = {

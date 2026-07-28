@@ -85,17 +85,21 @@ export const handler: Handler = async (event) => {
       })
       .eq("id", tx.id);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    // Direct Psikolog Profesional payments (psychologist_id set, no package_id) pay for a
+    // single session, not a shared-quota package — skip creating a subscription for those.
+    if (tx.package_id) {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
 
-    await admin.from("user_subscriptions").insert({
-      patient_id: tx.patient_id,
-      transaction_id: tx.id,
-      package_name: tx.packages?.name ?? "Paket Konseling",
-      total_quota: tx.packages?.session_quota ?? 1,
-      used_quota: 0,
-      expires_at: expiresAt.toISOString(),
-    });
+      await admin.from("user_subscriptions").insert({
+        patient_id: tx.patient_id,
+        transaction_id: tx.id,
+        package_name: tx.packages?.name ?? "Paket Konseling",
+        total_quota: tx.packages?.session_quota ?? 1,
+        used_quota: 0,
+        expires_at: expiresAt.toISOString(),
+      });
+    }
   } else if (isFailed) {
     await admin.from("transactions").update({ status: "failed" }).eq("id", tx.id);
   }

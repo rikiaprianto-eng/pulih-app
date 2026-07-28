@@ -38,7 +38,11 @@ begin
   on conflict (id) do nothing;
 
   if coalesce(new.raw_user_meta_data ->> 'role', 'patient') = 'psychologist' then
-    insert into public.psychologist_profiles (id) values (new.id)
+    insert into public.psychologist_profiles (id, category)
+    values (
+      new.id,
+      coalesce(new.raw_user_meta_data ->> 'category', 'teman_curhat')
+    )
     on conflict (id) do nothing;
   end if;
 
@@ -104,8 +108,25 @@ create table if not exists public.psychologist_profiles (
   price_30 integer not null default 99000,
   price_60 integer not null default 175000,
   verification_status text not null default 'pending'
-    check (verification_status in ('pending', 'verified', 'rejected'))
+    check (verification_status in ('pending', 'verified', 'rejected')),
+  -- 'teman_curhat' = peer counselor tier (typically S1), priced via the shared
+  -- packages table. 'profesional' = licensed psychologist tier (typically S2), sets
+  -- their own hourly_rate and patients pay that rate directly per session.
+  category text not null default 'teman_curhat' check (category in ('teman_curhat', 'profesional')),
+  hourly_rate integer
 );
+
+-- In case psychologist_profiles already existed from an earlier run of this file.
+alter table public.psychologist_profiles add column if not exists category text not null default 'teman_curhat';
+alter table public.psychologist_profiles add column if not exists hourly_rate integer;
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'psychologist_profiles_category_check'
+  ) then
+    alter table public.psychologist_profiles
+      add constraint psychologist_profiles_category_check check (category in ('teman_curhat', 'profesional'));
+  end if;
+end $$;
 
 create table if not exists public.specializations (
   id uuid primary key default gen_random_uuid(),
@@ -127,8 +148,21 @@ create table if not exists public.verification_requirements (
   input_type text not null default 'text' check (input_type in ('text', 'photo')),
   is_required boolean not null default true,
   sort_order integer not null default 0,
-  is_active boolean not null default true
+  is_active boolean not null default true,
+  -- Which tier this requirement applies to. 'both' shows it to every registering
+  -- psychologist regardless of category.
+  category text not null default 'both' check (category in ('teman_curhat', 'profesional', 'both'))
 );
+
+alter table public.verification_requirements add column if not exists category text not null default 'both';
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'verification_requirements_category_check'
+  ) then
+    alter table public.verification_requirements
+      add constraint verification_requirements_category_check check (category in ('teman_curhat', 'profesional', 'both'));
+  end if;
+end $$;
 
 -- One row per (psychologist, requirement) answer. text_value for input_type='text',
 -- file_path (private storage path, not a public URL) for input_type='photo'.
@@ -193,12 +227,17 @@ create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid references public.profiles (id) on delete cascade,
   package_id uuid references public.packages (id),
+  -- Set instead of package_id for a direct "Psikolog Profesional" hourly-rate
+  -- payment, which isn't tied to any of the shared packages.
+  psychologist_id uuid references public.profiles (id),
   amount integer not null,
   payment_method text,
   status text not null default 'paid' check (status in ('pending', 'paid', 'failed', 'expired')),
   created_at timestamptz not null default now(),
   paid_at timestamptz default now()
 );
+
+alter table public.transactions add column if not exists psychologist_id uuid references public.profiles (id);
 
 create table if not exists public.user_subscriptions (
   id uuid primary key default gen_random_uuid(),

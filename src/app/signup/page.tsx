@@ -13,17 +13,41 @@ import {
   ArrowLeft,
   Loader2,
   MailCheck,
+  MessageCircleHeart,
+  GraduationCap,
 } from "lucide-react";
 import AuthShell from "@/components/AuthShell";
 import {
   Role,
+  PsychologistCategory,
   signUpWithEmail,
   signInWithGoogle,
   setPendingRole,
+  setPendingCategory,
   roleHome,
   consumeRedirectAfterLogin,
 } from "@/lib/auth";
 import { useAuth } from "@/lib/useAuth";
+
+const categoryOptions: {
+  category: PsychologistCategory;
+  title: string;
+  description: string;
+  icon: typeof MessageCircleHeart;
+}[] = [
+  {
+    category: "teman_curhat",
+    title: "Teman Curhat",
+    description: "Pendamping sebaya (min. S1) dengan tarif sesuai paket harga yang berlaku.",
+    icon: MessageCircleHeart,
+  },
+  {
+    category: "profesional",
+    title: "Psikolog Profesional",
+    description: "Psikolog berlisensi (min. S2) yang menentukan tarif konsultasi per jam sendiri.",
+    icon: GraduationCap,
+  },
+];
 
 const roleOptions: {
   role: Role;
@@ -49,6 +73,7 @@ export default function SignupPage() {
   const router = useRouter();
   const { profile: existingProfile, loading: authLoading } = useAuth();
   const [role, setRole] = useState<Role | null>(null);
+  const [category, setCategory] = useState<PsychologistCategory | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -66,6 +91,7 @@ export default function SignupPage() {
     if (!role) return;
     setError(null);
     setPendingRole(role);
+    if (role === "psychologist" && category) setPendingCategory(category);
     try {
       await signInWithGoogle();
     } catch {
@@ -79,7 +105,13 @@ export default function SignupPage() {
     setError(null);
     setLoading(true);
     try {
-      const { user, session } = await signUpWithEmail(email.trim(), password, name.trim(), role);
+      const { user, session } = await signUpWithEmail(
+        email.trim(),
+        password,
+        name.trim(),
+        role,
+        role === "psychologist" ? category ?? "teman_curhat" : undefined
+      );
       if (session && user) {
         router.push(consumeRedirectAfterLogin() ?? roleHome(role));
       } else {
@@ -112,13 +144,23 @@ export default function SignupPage() {
     );
   }
 
+  const needsCategoryStep = role === "psychologist" && !category;
+
   return (
     <AuthShell
-      title={role ? "Lengkapi akun Pulih-mu" : "Buat akun Pulih"}
+      title={
+        needsCategoryStep
+          ? "Pilih jenis layanan psikolog"
+          : role
+            ? "Lengkapi akun Pulih-mu"
+            : "Buat akun Pulih"
+      }
       subtitle={
-        role
-          ? "Satu langkah lagi untuk mulai menggunakan Pulih."
-          : "Pilih peranmu untuk memulai pengalaman yang sesuai kebutuhanmu."
+        needsCategoryStep
+          ? "Tentukan peranmu sebagai mitra psikolog di Pulih."
+          : role
+            ? "Satu langkah lagi untuk mulai menggunakan Pulih."
+            : "Pilih peranmu untuk memulai pengalaman yang sesuai kebutuhanmu."
       }
     >
       {!role ? (
@@ -152,19 +194,56 @@ export default function SignupPage() {
             </Link>
           </p>
         </div>
-      ) : (
-        <div>
+      ) : needsCategoryStep ? (
+        <div className="space-y-4">
           <button
             type="button"
             onClick={() => setRole(null)}
-            className="mb-4 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+            className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
           >
             <ArrowLeft size={14} /> Ganti peran
           </button>
 
+          {categoryOptions.map((opt) => {
+            const Icon = opt.icon;
+            return (
+              <button
+                key={opt.category}
+                type="button"
+                onClick={() => setCategory(opt.category)}
+                className="flex w-full items-center gap-4 rounded-2xl border-2 border-slate-100 p-4 text-left transition hover:border-teal-500 hover:bg-teal-50/50"
+              >
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-teal-500 text-white">
+                  <Icon size={22} />
+                </span>
+                <span>
+                  <span className="block font-heading text-sm font-semibold text-slate-900">
+                    {opt.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{opt.description}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div>
+          <button
+            type="button"
+            onClick={() => (role === "psychologist" ? setCategory(null) : setRole(null))}
+            className="mb-4 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            <ArrowLeft size={14} /> {role === "psychologist" ? "Ganti kategori" : "Ganti peran"}
+          </button>
+
           <div className="mb-5 flex items-center gap-2 rounded-xl bg-teal-50 px-3 py-2.5 text-sm font-medium text-teal-700">
             <CheckCircle2 size={16} />
-            Daftar sebagai {role === "patient" ? "Pasien" : "Psikolog"}
+            Daftar sebagai{" "}
+            {role === "patient"
+              ? "Pasien"
+              : category === "profesional"
+                ? "Psikolog Profesional"
+                : "Teman Curhat"}
           </div>
 
           <button

@@ -53,6 +53,7 @@ import {
   createUserAsAdmin,
   setOnlineStatus,
   setPsychologistVerification,
+  updatePsychologistCategory,
   fetchVerificationRequirements,
   createRequirement,
   deleteRequirement,
@@ -243,11 +244,17 @@ export default function AdminPage() {
     setUpdatingVerifyId(null);
   }
 
+  async function handleChangeCategory(userId: string, category: "teman_curhat" | "profesional") {
+    await updatePsychologistCategory(userId, category);
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, category } : u)));
+  }
+
   async function handleCreateRequirement(fields: {
     label: string;
     description: string;
     inputType: "text" | "photo";
     isRequired: boolean;
+    category: "teman_curhat" | "profesional" | "both";
   }) {
     await createRequirement(fields);
     setAddingRequirement(false);
@@ -493,6 +500,7 @@ export default function AdminPage() {
                   onVerify={handleVerifyPsychologist}
                   onAddRequirement={() => setAddingRequirement(true)}
                   onDeleteRequirement={handleDeleteRequirement}
+                  onChangeCategory={handleChangeCategory}
                 />
               )}
 
@@ -1506,6 +1514,7 @@ function PsychologistsTab({
   onVerify,
   onAddRequirement,
   onDeleteRequirement,
+  onChangeCategory,
 }: {
   users: AdminUserView[];
   requirements: VerificationRequirement[];
@@ -1514,6 +1523,7 @@ function PsychologistsTab({
   onVerify: (userId: string, status: "verified" | "rejected") => Promise<void>;
   onAddRequirement: () => void;
   onDeleteRequirement: (id: string) => Promise<void>;
+  onChangeCategory: (userId: string, category: "teman_curhat" | "profesional") => Promise<void>;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const psychologists = users.filter((u) => u.rawRole === "psychologist");
@@ -1557,6 +1567,13 @@ function PsychologistsTab({
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
               {r.inputType === "photo" ? "Foto" : "Teks"}
             </span>
+            <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700">
+              {r.category === "both"
+                ? "Semua Kategori"
+                : r.category === "profesional"
+                  ? "Psikolog Profesional"
+                  : "Teman Curhat"}
+            </span>
             <button
               onClick={() => onDeleteRequirement(r.id)}
               className="flex items-center gap-1 rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
@@ -1578,30 +1595,45 @@ function PsychologistsTab({
       <div className="mt-3 space-y-3">
         {psychologists.map((u) => {
           const answers = submissions[u.id] ?? [];
-          const answeredCount = requirements.filter((r) =>
+          const myRequirements = requirements.filter(
+            (r) => r.category === "both" || r.category === (u.category ?? "teman_curhat")
+          );
+          const answeredCount = myRequirements.filter((r) =>
             answers.some((a) => a.requirementId === r.id && (a.textValue || a.filePath))
           ).length;
           const isOpen = expandedId === u.id;
           return (
             <div key={u.id} className="rounded-2xl border border-slate-100 bg-white p-4">
-              <button
-                onClick={() => setExpandedId(isOpen ? null : u.id)}
-                className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
-              >
-                <div>
+              <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                <button
+                  onClick={() => setExpandedId(isOpen ? null : u.id)}
+                  className="flex-1 text-left"
+                >
                   <p className="text-sm font-semibold text-slate-800">{u.name}</p>
                   <p className="text-xs text-slate-500">
-                    {u.email} &middot; {answeredCount}/{requirements.length} syarat terisi
+                    {u.email} &middot; {answeredCount}/{myRequirements.length} syarat terisi
                   </p>
-                </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userStatusStyle[u.status]}`}>
-                  {u.status}
-                </span>
-              </button>
+                </button>
+                <select
+                  value={u.category ?? "teman_curhat"}
+                  onChange={(e) =>
+                    onChangeCategory(u.id, e.target.value as "teman_curhat" | "profesional")
+                  }
+                  className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 outline-none focus:border-teal-500"
+                >
+                  <option value="teman_curhat">Teman Curhat</option>
+                  <option value="profesional">Psikolog Profesional</option>
+                </select>
+                <button onClick={() => setExpandedId(isOpen ? null : u.id)}>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userStatusStyle[u.status]}`}>
+                    {u.status}
+                  </span>
+                </button>
+              </div>
 
               {isOpen && (
                 <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-                  {requirements.map((r) => {
+                  {myRequirements.map((r) => {
                     const answer = answers.find((a) => a.requirementId === r.id);
                     return (
                       <div key={r.id} className="rounded-xl bg-slate-50 p-3">
@@ -1692,6 +1724,7 @@ function AddRequirementModal({
     description: string;
     inputType: "text" | "photo";
     isRequired: boolean;
+    category: "teman_curhat" | "profesional" | "both";
   }) => Promise<void>;
 }) {
   const [form, setForm] = useState({
@@ -1699,6 +1732,7 @@ function AddRequirementModal({
     description: "",
     inputType: "text" as "text" | "photo",
     isRequired: true,
+    category: "both" as "teman_curhat" | "profesional" | "both",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1739,6 +1773,20 @@ function AddRequirementModal({
         >
           <option value="text">Teks</option>
           <option value="photo">Foto / Dokumen</option>
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Berlaku untuk</label>
+        <select
+          value={form.category}
+          onChange={(e) =>
+            setForm({ ...form, category: e.target.value as "teman_curhat" | "profesional" | "both" })
+          }
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+        >
+          <option value="both">Semua Kategori</option>
+          <option value="teman_curhat">Teman Curhat</option>
+          <option value="profesional">Psikolog Profesional</option>
         </select>
       </div>
       <label className="flex items-center gap-2 text-xs text-slate-600">

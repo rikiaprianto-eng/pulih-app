@@ -40,6 +40,8 @@ type PsychologistRow = {
     price_30: number;
     price_60: number;
     experience_label: string | null;
+    category: "teman_curhat" | "profesional" | null;
+    hourly_rate: number | null;
     psychologist_specializations: { specializations: { name: string } | null }[];
   } | null;
 };
@@ -52,7 +54,7 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -79,8 +81,47 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
       avatarSeed: row.full_name ?? row.id,
       price30: pp?.price_30 ?? 99000,
       price60: pp?.price_60 ?? 175000,
+      category: pp?.category === "profesional" ? "profesional" : "teman_curhat",
+      hourlyRate: pp?.hourly_rate ?? null,
     };
   });
+}
+
+/** Single psychologist lookup for the direct-pay checkout page (Psikolog Profesional). */
+export async function fetchPsychologistById(id: string): Promise<Psychologist | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      `id, full_name,
+       psychologist_profiles!inner (
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate,
+         psychologist_specializations ( specializations ( name ) )
+       )`
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as unknown as PsychologistRow;
+  const pp = row.psychologist_profiles;
+  const specialties =
+    pp?.psychologist_specializations
+      ?.map((ps) => ps.specializations?.name)
+      .filter((n): n is string => Boolean(n)) ?? [];
+  return {
+    id: row.id,
+    name: row.full_name ?? "Psikolog Pulih",
+    title: pp?.title ?? "Psikolog Klinis",
+    specialties,
+    rating: pp?.rating_avg ?? 5,
+    reviewCount: pp?.review_count ?? 0,
+    online: pp?.is_online ?? false,
+    experience: pp?.experience_label ?? "",
+    avatarSeed: row.full_name ?? row.id,
+    price30: pp?.price_30 ?? 99000,
+    price60: pp?.price_60 ?? 175000,
+    category: pp?.category === "profesional" ? "profesional" : "teman_curhat",
+    hourlyRate: pp?.hourly_rate ?? null,
+  };
 }
 
 export async function fetchPackages(): Promise<Package[]> {
@@ -263,6 +304,23 @@ export async function createCheckout(
   if (subError) throw subError;
 }
 
+/** Direct-pay checkout for a Psikolog Profesional's own hourly rate (simulated payment flow). */
+export async function createDirectCheckout(
+  patientId: string,
+  psychologistId: string,
+  amount: number,
+  paymentMethodName: string
+) {
+  const { error } = await supabase.from("transactions").insert({
+    patient_id: patientId,
+    psychologist_id: psychologistId,
+    amount,
+    payment_method: paymentMethodName,
+    status: "paid",
+  });
+  if (error) throw error;
+}
+
 /** Starts (or reuses) a counseling session between the logged-in patient and a psychologist. */
 export async function startSession(patientId: string, psychologistId: string, durationMinutes = 60) {
   const { data, error } = await supabase
@@ -308,6 +366,39 @@ export async function extendSession(sessionId: string, extraMinutes: number) {
 
 export async function setOnlineStatus(psychologistId: string, isOnline: boolean) {
   await supabase.from("psychologist_profiles").update({ is_online: isOnline }).eq("id", psychologistId);
+}
+
+/** Psychologist-only: set their own hourly rate (used by the Psikolog Profesional tier). */
+export async function updateHourlyRate(psychologistId: string, hourlyRate: number) {
+  await supabase.from("psychologist_profiles").update({ hourly_rate: hourlyRate }).eq("id", psychologistId);
+}
+
+/** Admin-only: change which tier a psychologist belongs to. */
+export async function updatePsychologistCategory(
+  psychologistId: string,
+  category: "teman_curhat" | "profesional"
+) {
+  await supabase.from("psychologist_profiles").update({ category }).eq("id", psychologistId);
+}
+
+export async function fetchMyHourlyRate(psychologistId: string): Promise<number | null> {
+  const { data } = await supabase
+    .from("psychologist_profiles")
+    .select("hourly_rate")
+    .eq("id", psychologistId)
+    .maybeSingle();
+  return data?.hourly_rate ?? null;
+}
+
+export async function fetchMyCategory(
+  psychologistId: string
+): Promise<"teman_curhat" | "profesional"> {
+  const { data } = await supabase
+    .from("psychologist_profiles")
+    .select("category")
+    .eq("id", psychologistId)
+    .maybeSingle();
+  return data?.category === "profesional" ? "profesional" : "teman_curhat";
 }
 
 /** Admin-only: approve or reject a psychologist so they can (or can't) appear publicly. */
@@ -468,12 +559,14 @@ export type AdminUserView = {
   status: string;
   joined: string;
   isOnline: boolean | null;
+  category: "teman_curhat" | "profesional" | null;
+  hourlyRate: number | null;
 };
 
 export async function fetchAdminUsers(): Promise<AdminUserView[]> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("*, psychologist_profiles(verification_status, is_online)")
+    .select("*, psychologist_profiles(verification_status, is_online, category, hourly_rate)")
     .order("created_at", { ascending: false });
   if (error || !data) return [];
   return (data as unknown as Array<{
@@ -482,7 +575,12 @@ export async function fetchAdminUsers(): Promise<AdminUserView[]> {
     email: string | null;
     role: "patient" | "psychologist" | "admin";
     created_at: string;
-    psychologist_profiles: { verification_status: string; is_online: boolean } | null;
+    psychologist_profiles: {
+      verification_status: string;
+      is_online: boolean;
+      category: "teman_curhat" | "profesional" | null;
+      hourly_rate: number | null;
+    } | null;
   }>).map((u) => ({
     id: u.id,
     name: u.full_name ?? "Pengguna",
@@ -501,6 +599,13 @@ export async function fetchAdminUsers(): Promise<AdminUserView[]> {
       new Date(u.created_at)
     ),
     isOnline: u.role === "psychologist" ? (u.psychologist_profiles?.is_online ?? false) : null,
+    category:
+      u.role === "psychologist"
+        ? u.psychologist_profiles?.category === "profesional"
+          ? "profesional"
+          : "teman_curhat"
+        : null,
+    hourlyRate: u.role === "psychologist" ? (u.psychologist_profiles?.hourly_rate ?? null) : null,
   }));
 }
 
@@ -817,6 +922,28 @@ export async function createMidtransTransaction(
   return body;
 }
 
+/** Direct-pay Midtrans transaction for a specific Psikolog Profesional's hourly rate. */
+export async function createDirectMidtransTransaction(
+  psychologistId: string
+): Promise<{ token: string; transactionId: string; redirectUrl: string }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("Belum login.");
+
+  const res = await fetch("/.netlify/functions/create-midtrans-transaction", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ psychologistId }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? "Gagal memulai pembayaran.");
+  return body;
+}
+
 export async function fetchPaymentSecretStatus(): Promise<{ configured: boolean }> {
   const {
     data: { session },
@@ -841,6 +968,7 @@ export type VerificationRequirement = {
   inputType: "text" | "photo";
   isRequired: boolean;
   sortOrder: number;
+  category: "teman_curhat" | "profesional" | "both";
 };
 
 export async function fetchVerificationRequirements(): Promise<VerificationRequirement[]> {
@@ -857,6 +985,7 @@ export async function fetchVerificationRequirements(): Promise<VerificationRequi
     inputType: r.input_type === "photo" ? "photo" : "text",
     isRequired: r.is_required,
     sortOrder: r.sort_order,
+    category: r.category === "teman_curhat" || r.category === "profesional" ? r.category : "both",
   }));
 }
 
@@ -865,6 +994,7 @@ export async function createRequirement(fields: {
   description: string;
   inputType: "text" | "photo";
   isRequired: boolean;
+  category: "teman_curhat" | "profesional" | "both";
 }) {
   const { data: rows } = await supabase
     .from("verification_requirements")
@@ -878,6 +1008,7 @@ export async function createRequirement(fields: {
     input_type: fields.inputType,
     is_required: fields.isRequired,
     sort_order: nextSortOrder,
+    category: fields.category,
   });
 }
 

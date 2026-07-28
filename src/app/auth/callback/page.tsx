@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import {
   applyRoleAfterOAuth,
+  consumePendingCategory,
   consumePendingRole,
   consumeRedirectAfterLogin,
   fetchProfile,
@@ -45,8 +46,9 @@ export default function AuthCallbackPage() {
 
     async function proceed(userId: string) {
       const pendingRole = consumePendingRole();
+      const pendingCategory = consumePendingCategory();
       if (pendingRole) {
-        await applyRoleAfterOAuth(userId, pendingRole);
+        await applyRoleAfterOAuth(userId, pendingRole, pendingCategory ?? undefined);
       }
       const profile = await fetchProfile(userId);
       if (cancelled) return;

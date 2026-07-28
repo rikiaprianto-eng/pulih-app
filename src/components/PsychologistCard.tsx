@@ -3,9 +3,13 @@
 import { Star } from "lucide-react";
 import Link from "next/link";
 import { Psychologist } from "@/lib/data";
-import { avatarUrl } from "@/lib/utils";
+import { avatarUrl, formatIDR } from "@/lib/utils";
 
 export default function PsychologistCard({ psy }: { psy: Psychologist }) {
+  const isProfesional = psy.category === "profesional";
+  const sessionHref = isProfesional
+    ? `/bayar-konsultasi?psy=${psy.id}`
+    : `/session?psy=${psy.id}&name=${encodeURIComponent(psy.name)}`;
   return (
     <div className="flex w-full flex-col rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-100 transition hover:-translate-y-1 hover:shadow-md">
       <div className="flex items-start gap-3">
@@ -33,6 +37,13 @@ export default function PsychologistCard({ psy }: { psy: Psychologist }) {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
+        <span
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+            isProfesional ? "bg-sky-100 text-sky-700" : "bg-amber-50 text-amber-700"
+          }`}
+        >
+          {isProfesional ? "Psikolog Profesional" : "Teman Curhat"}
+        </span>
         {psy.specialties.map((s) => (
           <span
             key={s}
@@ -42,6 +53,12 @@ export default function PsychologistCard({ psy }: { psy: Psychologist }) {
           </span>
         ))}
       </div>
+
+      {isProfesional && (
+        <p className="mt-2 text-sm font-semibold text-slate-800">
+          {psy.hourlyRate ? `${formatIDR(psy.hourlyRate)} / jam` : "Tarif belum diatur"}
+        </p>
+      )}
 
       <div className="mt-3 flex items-center gap-1.5 text-xs">
         <span
@@ -53,7 +70,7 @@ export default function PsychologistCard({ psy }: { psy: Psychologist }) {
       </div>
 
       <Link
-        href={psy.online ? `/session?psy=${psy.id}&name=${encodeURIComponent(psy.name)}` : "#"}
+        href={psy.online ? sessionHref : "#"}
         aria-disabled={!psy.online}
         className={`mt-4 inline-flex items-center justify-center rounded-full px-4 py-2.5 text-sm font-semibold transition ${
           psy.online
@@ -61,7 +78,11 @@ export default function PsychologistCard({ psy }: { psy: Psychologist }) {
             : "cursor-not-allowed bg-slate-100 text-slate-400"
         }`}
       >
-        {psy.online ? "Mulai Sesi Sekarang" : "Jadwalkan Sesi"}
+        {!psy.online
+          ? "Jadwalkan Sesi"
+          : isProfesional
+            ? "Bayar & Mulai Konsultasi"
+            : "Mulai Sesi Sekarang"}
       </Link>
     </div>
   );

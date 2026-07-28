@@ -10,39 +10,66 @@ export const handler: Handler = async (event) => {
   const userId = await requireUserId(event.headers.authorization);
   if (!userId) return jsonResponse(401, { error: "Belum login." });
 
-  let body: { packageId?: string };
+  let body: { packageId?: string; psychologistId?: string };
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
     return jsonResponse(400, { error: "Body tidak valid." });
   }
-  if (!body.packageId) return jsonResponse(400, { error: "packageId wajib diisi." });
+  if (!body.packageId && !body.psychologistId) {
+    return jsonResponse(400, { error: "packageId atau psychologistId wajib diisi." });
+  }
 
   const admin = getSupabaseAdmin();
 
-  const [{ data: pkg }, { data: secret }, { data: settings }, { data: profile }] = await Promise.all([
-    admin.from("packages").select("*").eq("id", body.packageId).single(),
+  const [{ data: secret }, { data: settings }, { data: profile }] = await Promise.all([
     admin.from("payment_secrets").select("midtrans_server_key").eq("id", 1).maybeSingle(),
     admin.from("site_settings").select("midtrans_is_production").eq("id", 1).maybeSingle(),
     admin.from("profiles").select("full_name, email").eq("id", userId).single(),
   ]);
 
-  if (!pkg) return jsonResponse(404, { error: "Paket tidak ditemukan." });
   if (!secret?.midtrans_server_key) {
     return jsonResponse(400, {
       error: "Server Key Midtrans belum diatur oleh admin di menu Setting > Pembayaran.",
     });
   }
 
-  const { data: tx, error: txError } = await admin
-    .from("transactions")
-    .insert({
+  let amount: number;
+  let itemId: string;
+  let itemName: string;
+  let insertFields: Record<string, unknown>;
+
+  if (body.packageId) {
+    const { data: pkg } = await admin.from("packages").select("*").eq("id", body.packageId).single();
+    if (!pkg) return jsonResponse(404, { error: "Paket tidak ditemukan." });
+    amount = pkg.price;
+    itemId = pkg.id;
+    itemName = pkg.name;
+    insertFields = { patient_id: userId, package_id: pkg.id, amount, payment_method: "Midtrans", status: "pending" };
+  } else {
+    const { data: psy } = await admin
+      .from("psychologist_profiles")
+      .select("id, hourly_rate, profiles!inner(full_name)")
+      .eq("id", body.psychologistId)
+      .single();
+    if (!psy || !psy.hourly_rate) {
+      return jsonResponse(404, { error: "Psikolog tidak ditemukan atau belum menentukan tarif." });
+    }
+    amount = psy.hourly_rate;
+    itemId = psy.id;
+    itemName = `Konsultasi ${(psy as unknown as { profiles: { full_name: string | null } }).profiles?.full_name ?? "Psikolog"}`;
+    insertFields = {
       patient_id: userId,
-      package_id: pkg.id,
-      amount: pkg.price,
+      psychologist_id: psy.id,
+      amount,
       payment_method: "Midtrans",
       status: "pending",
-    })
+    };
+  }
+
+  const { data: tx, error: txError } = await admin
+    .from("transactions")
+    .insert(insertFields)
     .select()
     .single();
   if (txError || !tx) return jsonResponse(500, { error: txError?.message ?? "Gagal membuat transaksi." });
@@ -64,7 +91,7 @@ export const handler: Handler = async (event) => {
     body: JSON.stringify({
       transaction_details: {
         order_id: tx.id,
-        gross_amount: pkg.price,
+        gross_amount: amount,
       },
       customer_details: {
         first_name: profile?.full_name ?? "Pengguna Pulih",
@@ -72,10 +99,10 @@ export const handler: Handler = async (event) => {
       },
       item_details: [
         {
-          id: pkg.id,
-          price: pkg.price,
+          id: itemId,
+          price: amount,
           quantity: 1,
-          name: pkg.name.slice(0, 50),
+          name: itemName.slice(0, 50),
         },
       ],
     }),
