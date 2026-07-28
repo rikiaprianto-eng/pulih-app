@@ -257,7 +257,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-50">
       <AppHeader navItems={navItems} />
 
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 md:flex-row md:gap-6 md:py-8 lg:px-8">
         <aside className="hidden w-56 shrink-0 md:block">
           <nav className="space-y-1 rounded-2xl border border-slate-100 bg-white p-2">
             {tabs.map((t) => {
