@@ -45,7 +45,6 @@ type PsychologistRow = {
     discount_percent: number | null;
     coupon_code: string | null;
     coupon_discount_amount: number | null;
-    lynkid_url: string | null;
     psychologist_specializations: { specializations: { name: string } | null }[];
   } | null;
 };
@@ -58,7 +57,7 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, verification_status, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -90,7 +89,6 @@ export async function fetchPsychologists(): Promise<Psychologist[]> {
       discountPercent: pp?.discount_percent ?? 0,
       couponCode: pp?.coupon_code ?? null,
       couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
-      lynkidUrl: pp?.lynkid_url ?? null,
     };
   });
 }
@@ -102,7 +100,7 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     .select(
       `id, full_name,
        psychologist_profiles!inner (
-         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url,
+         title, is_online, rating_avg, review_count, price_30, price_60, experience_label, category, hourly_rate, discount_percent, coupon_code, coupon_discount_amount,
          psychologist_specializations ( specializations ( name ) )
        )`
     )
@@ -132,7 +130,6 @@ export async function fetchPsychologistById(id: string): Promise<Psychologist | 
     discountPercent: pp?.discount_percent ?? 0,
     couponCode: pp?.coupon_code ?? null,
     couponDiscountAmount: pp?.coupon_discount_amount ?? 0,
-    lynkidUrl: pp?.lynkid_url ?? null,
   };
 }
 
@@ -155,7 +152,6 @@ export async function fetchPackages(): Promise<Package[]> {
     badge: p.badge ?? undefined,
     couponCode: p.coupon_code ?? undefined,
     couponDiscountAmount: p.coupon_discount_amount ?? undefined,
-    lynkidUrl: p.lynkid_url ?? undefined,
   }));
 }
 
@@ -315,7 +311,7 @@ export async function createCheckout(
     .select("teman_curhat_admin_fee")
     .eq("id", 1)
     .maybeSingle();
-  const amount = applyCoupon(pkg.price, couponCode, pkg.couponCode, pkg.couponDiscountAmount);
+  const amount = roundToNearest1000(applyCoupon(pkg.price, couponCode, pkg.couponCode, pkg.couponDiscountAmount));
   const { adminFeeAmount, psychologistShareAmount } = splitTemanCurhatRevenue(
     amount,
     settings?.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee
@@ -364,7 +360,7 @@ export async function createDirectCheckout(
     .eq("id", 1)
     .maybeSingle();
   const baseAmount = effectiveHourlyRate(psy);
-  const amount = applyCoupon(baseAmount, couponCode, psy.couponCode, psy.couponDiscountAmount);
+  const amount = roundToNearest1000(applyCoupon(baseAmount, couponCode, psy.couponCode, psy.couponDiscountAmount));
   const { adminFeeAmount, psychologistShareAmount } = splitProfesionalRevenue(
     amount,
     settings?.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent
@@ -402,13 +398,18 @@ export async function createPendingLynkTransaction(
     .eq("id", 1)
     .maybeSingle();
 
+  // Defensively re-round here too — the Lynk.id product is priced at Rp1.000 and
+  // charged by quantity, so the pending amount must be an exact multiple of 1.000
+  // regardless of what the caller passed in.
+  const amount = roundToNearest1000(fields.amount);
+
   const { adminFeeAmount, psychologistShareAmount } = fields.packageId
     ? splitTemanCurhatRevenue(
-        fields.amount,
+        amount,
         settings?.teman_curhat_admin_fee ?? DEFAULT_SITE_SETTINGS.temanCurhatAdminFee
       )
     : splitProfesionalRevenue(
-        fields.amount,
+        amount,
         settings?.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent
       );
 
@@ -418,7 +419,7 @@ export async function createPendingLynkTransaction(
       patient_id: patientId,
       package_id: fields.packageId ?? null,
       psychologist_id: fields.psychologistId ?? null,
-      amount: fields.amount,
+      amount,
       payment_method: "Lynk.id",
       status: "pending",
       admin_fee_amount: adminFeeAmount,
@@ -574,17 +575,15 @@ export async function updateProfessionalPricing(
   hourlyRate: number,
   discountPercent: number,
   couponCode: string,
-  couponDiscountAmount: number,
-  lynkidUrl: string = ""
+  couponDiscountAmount: number
 ) {
   const { error } = await supabase
     .from("psychologist_profiles")
     .update({
-      hourly_rate: hourlyRate,
+      hourly_rate: roundUpTo1000(hourlyRate),
       discount_percent: discountPercent,
       coupon_code: couponCode.trim() ? couponCode.trim().toUpperCase() : null,
       coupon_discount_amount: couponDiscountAmount || null,
-      lynkid_url: lynkidUrl.trim() || null,
     })
     .eq("id", psychologistId);
   if (error) throw error;
@@ -612,11 +611,10 @@ export async function fetchMyPricing(psychologistId: string): Promise<{
   discountPercent: number;
   couponCode: string;
   couponDiscountAmount: number;
-  lynkidUrl: string;
 }> {
   const { data } = await supabase
     .from("psychologist_profiles")
-    .select("hourly_rate, discount_percent, coupon_code, coupon_discount_amount, lynkid_url")
+    .select("hourly_rate, discount_percent, coupon_code, coupon_discount_amount")
     .eq("id", psychologistId)
     .maybeSingle();
   return {
@@ -624,7 +622,6 @@ export async function fetchMyPricing(psychologistId: string): Promise<{
     discountPercent: data?.discount_percent ?? 0,
     couponCode: data?.coupon_code ?? "",
     couponDiscountAmount: data?.coupon_discount_amount ?? 0,
-    lynkidUrl: data?.lynkid_url ?? "",
   };
 }
 
@@ -936,12 +933,11 @@ export async function updatePackage(id: string, fields: Partial<Package>) {
       description: fields.description,
       duration_minutes: fields.durationMinutes,
       session_quota: fields.sessionQuota,
-      price: fields.price,
-      original_price: fields.originalPrice ?? null,
+      price: fields.price != null ? roundUpTo1000(fields.price) : fields.price,
+      original_price: fields.originalPrice ? roundUpTo1000(fields.originalPrice) : null,
       badge: fields.badge ?? null,
       coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
       coupon_discount_amount: fields.couponDiscountAmount || null,
-      lynkid_url: fields.lynkidUrl?.trim() || null,
     })
     .eq("id", id);
 }
@@ -952,12 +948,11 @@ export async function createPackage(fields: Omit<Package, "id">) {
     description: fields.description,
     duration_minutes: fields.durationMinutes,
     session_quota: fields.sessionQuota,
-    price: fields.price,
-    original_price: fields.originalPrice ?? null,
+    price: roundUpTo1000(fields.price),
+    original_price: fields.originalPrice ? roundUpTo1000(fields.originalPrice) : null,
     badge: fields.badge ?? null,
     coupon_code: fields.couponCode?.trim() ? fields.couponCode.trim().toUpperCase() : null,
     coupon_discount_amount: fields.couponDiscountAmount || null,
-    lynkid_url: fields.lynkidUrl?.trim() || null,
   });
 }
 
@@ -1083,6 +1078,7 @@ export type SiteSettings = {
   temanCurhatAdminFee: number;
   profesionalAdminFeePercent: number;
   profesionalMinHourlyRate: number;
+  lynkidProductUrl: string;
 };
 
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -1099,6 +1095,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   temanCurhatAdminFee: 14000,
   profesionalAdminFeePercent: 10,
   profesionalMinHourlyRate: 0,
+  lynkidProductUrl: "",
 };
 
 export async function fetchSiteSettings(): Promise<SiteSettings> {
@@ -1125,6 +1122,7 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
       data.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent,
     profesionalMinHourlyRate:
       data.profesional_min_hourly_rate ?? DEFAULT_SITE_SETTINGS.profesionalMinHourlyRate,
+    lynkidProductUrl: data.lynkid_product_url ?? "",
   };
 }
 
@@ -1145,6 +1143,7 @@ export async function updateSiteSettings(fields: SiteSettings) {
       teman_curhat_admin_fee: fields.temanCurhatAdminFee,
       profesional_admin_fee_percent: fields.profesionalAdminFeePercent,
       profesional_min_hourly_rate: fields.profesionalMinHourlyRate,
+      lynkid_product_url: fields.lynkidProductUrl?.trim() || null,
     })
     .eq("id", 1);
 }
@@ -1177,6 +1176,21 @@ export function applyCoupon(
   if (!enteredCode.trim() || !matchCode) return basePrice;
   if (enteredCode.trim().toUpperCase() !== matchCode.trim().toUpperCase()) return basePrice;
   return Math.max(0, basePrice - (discountAmount || 0));
+}
+
+/**
+ * Every Teman Curhat package price and Psikolog Profesional hourly rate must be a
+ * multiple of Rp1.000 — the Lynk.id checkout has one Rp1.000 product and pays by
+ * quantity, so a non-round price could never be charged exactly. Amounts below the
+ * next thousand are rounded up when an admin/psychologist sets a price.
+ */
+export function roundUpTo1000(amount: number): number {
+  return Math.ceil(Math.max(amount, 0) / 1000) * 1000;
+}
+
+/** Rounds a final (post-discount/coupon) charge to the nearest Rp1.000 so its Lynk.id qty is a whole number. */
+export function roundToNearest1000(amount: number): number {
+  return Math.round(Math.max(amount, 0) / 1000) * 1000;
 }
 
 // ---------------------------------------------------------------------------

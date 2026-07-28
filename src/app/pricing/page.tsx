@@ -24,6 +24,7 @@ import {
   createPendingLynkTransaction,
   fetchTransactionStatus,
   applyCoupon,
+  roundToNearest1000,
   SiteSettings,
 } from "@/lib/queries";
 import { setRedirectAfterLogin } from "@/lib/auth";
@@ -67,8 +68,11 @@ export default function PricingPage() {
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
   const useLynkid = settings?.paymentGateway === "lynkid";
   const finalPrice = selectedPkg
-    ? applyCoupon(selectedPkg.price, appliedCoupon ?? "", selectedPkg.couponCode, selectedPkg.couponDiscountAmount)
+    ? roundToNearest1000(
+        applyCoupon(selectedPkg.price, appliedCoupon ?? "", selectedPkg.couponCode, selectedPkg.couponDiscountAmount)
+      )
     : 0;
+  const lynkQty = finalPrice / 1000;
   const couponApplied = !!appliedCoupon && !!selectedPkg && finalPrice < selectedPkg.price;
 
   function applyCouponCode() {
@@ -144,8 +148,8 @@ export default function PricingPage() {
     setProcessing(true);
 
     if (useLynkid) {
-      if (!selectedPkg.lynkidUrl) {
-        setPayError("Link pembayaran Lynk.id untuk paket ini belum diatur admin.");
+      if (!settings?.lynkidProductUrl) {
+        setPayError("Link produk Lynk.id belum diatur admin di menu Setting.");
         setProcessing(false);
         return;
       }
@@ -154,7 +158,7 @@ export default function PricingPage() {
           packageId: selectedPkg.id,
           amount: finalPrice,
         });
-        window.open(selectedPkg.lynkidUrl, "_blank", "noopener,noreferrer");
+        window.open(settings.lynkidProductUrl, "_blank", "noopener,noreferrer");
         setWaitingLynk(true);
         setProcessing(false);
         const poll = setInterval(async () => {
@@ -314,7 +318,15 @@ export default function PricingPage() {
                           Setelah pembayaran selesai, halaman ini otomatis mendeteksi dan
                           mengaktifkan paketmu.
                         </p>
-                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
+                        <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+                          Di halaman Lynk.id, atur <strong>jumlah (Qty)</strong> produk menjadi{" "}
+                          <strong className="font-heading text-base">
+                            {lynkQty.toLocaleString("id-ID")}
+                          </strong>{" "}
+                          — produk seharga Rp1.000 &times; {lynkQty.toLocaleString("id-ID")} ={" "}
+                          <strong>{formatIDR(finalPrice)}</strong>.
+                        </div>
+                        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
                           Penting: saat mengisi data pembeli di Lynk.id, gunakan email yang sama
                           dengan akun Pulih-mu ({profile?.email ?? "email akunmu"}) supaya
                           pembayaran otomatis terhubung.

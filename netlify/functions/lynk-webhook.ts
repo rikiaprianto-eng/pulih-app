@@ -100,6 +100,16 @@ export const handler: Handler = async (event) => {
     return jsonResponse(200, { ok: true, note: "ignored: no pending Lynk.id transaction" });
   }
 
+  // The Lynk.id product is a fixed Rp1.000 item paid by quantity, so the amount
+  // Lynk.id reports should equal this transaction's amount exactly (both are
+  // always multiples of 1.000). A mismatch means this notification belongs to a
+  // different purchase — never settle the wrong amount against this transaction.
+  const paidAmount = Number(notif.amount ?? notif.grand_total ?? NaN);
+  if (!Number.isFinite(paidAmount) || Math.abs(paidAmount - tx.amount) > 1) {
+    console.warn("lynk-webhook: amount mismatch", { txId: tx.id, expected: tx.amount, paidAmount });
+    return jsonResponse(200, { ok: true, note: "ignored: amount does not match pending transaction" });
+  }
+
   await admin
     .from("transactions")
     .update({ status: "paid", paid_at: new Date().toISOString() })

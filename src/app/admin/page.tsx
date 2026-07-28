@@ -1091,7 +1091,6 @@ function EditPackageModal({
     ...pkg,
     couponCode: pkg.couponCode ?? "",
     couponDiscountAmount: pkg.couponDiscountAmount ?? 0,
-    lynkidUrl: pkg.lynkidUrl ?? "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -1143,11 +1142,10 @@ function EditPackageModal({
         value={String(form.couponDiscountAmount)}
         onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
       />
-      <Field
-        label="Link Pembayaran Lynk.id (utk gateway Lynk.id)"
-        value={form.lynkidUrl}
-        onChange={(v) => setForm({ ...form, lynkidUrl: v })}
-      />
+      <p className="text-[11px] text-slate-400">
+        Harga otomatis dibulatkan ke atas ke kelipatan Rp1.000 saat disimpan (untuk gateway
+        Lynk.id).
+      </p>
     </ModalShell>
   );
 }
@@ -1169,7 +1167,6 @@ function AddPackageModal({
     price: 0,
     couponCode: "",
     couponDiscountAmount: 0,
-    lynkidUrl: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -1228,11 +1225,10 @@ function AddPackageModal({
         value={String(form.couponDiscountAmount ?? 0)}
         onChange={(v) => setForm({ ...form, couponDiscountAmount: Number(v) || 0 })}
       />
-      <Field
-        label="Link Pembayaran Lynk.id (utk gateway Lynk.id)"
-        value={form.lynkidUrl ?? ""}
-        onChange={(v) => setForm({ ...form, lynkidUrl: v })}
-      />
+      <p className="text-[11px] text-slate-400">
+        Harga otomatis dibulatkan ke atas ke kelipatan Rp1.000 saat disimpan (untuk gateway
+        Lynk.id).
+      </p>
     </ModalShell>
   );
 }
@@ -1904,10 +1900,17 @@ function SettingsTab({
               {form.paymentGateway === "manual"
                 ? "Aktif sekarang: setiap transaksi langsung berstatus lunas begitu pasien klik \"Bayar Sekarang\" — tidak perlu Server/Client Key, tidak ada biaya transaksi, dan tidak perlu verifikasi manual dari admin."
                 : form.paymentGateway === "lynkid"
-                  ? "Buat produk di Lynk.id untuk tiap paket lalu tempel link-nya di Manajemen Harga. Isi Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
+                  ? "Buat 1 produk di Lynk.id seharga Rp1.000 dan tempel link-nya di bawah — satu link ini dipakai untuk semua paket & semua psikolog. Saat bayar, pasien mengubah jumlah (Qty) produk sesuai total harga dibagi Rp1.000. Isi juga Merchant Key (kartu Lynk.id di bawah) dan atur webhook Lynk.id ke URL yang tertera agar pembayaran auto-approve."
                   : "Butuh Client Key di bawah ini + Server Key (kartu Midtrans Server Key) agar auto-approve via webhook aktif. Tanpa keduanya, checkout akan gagal."}
             </p>
           </div>
+          {form.paymentGateway === "lynkid" && (
+            <Field
+              label="Link Produk Lynk.id (harga Rp1.000, satu untuk semua)"
+              value={form.lynkidProductUrl}
+              onChange={(v) => setForm({ ...form, lynkidProductUrl: v })}
+            />
+          )}
           <Field
             label="Midtrans Client Key"
             value={form.midtransClientKey}

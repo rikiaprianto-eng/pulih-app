@@ -34,6 +34,8 @@ import {
   fetchMyPricing,
   updateProfessionalPricing,
   fetchProfesionalMinHourlyRate,
+  roundUpTo1000,
+  roundToNearest1000,
   fetchIncomingSession,
   endSession,
   submitTextAnswer,
@@ -77,7 +79,6 @@ export default function PsikologPage() {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscountAmount, setCouponDiscountAmount] = useState(0);
-  const [lynkidUrl, setLynkidUrl] = useState("");
   const [minHourlyRate, setMinHourlyRate] = useState(0);
 
   useEffect(() => {
@@ -161,7 +162,6 @@ export default function PsikologPage() {
       setDiscountPercent(pricing.discountPercent);
       setCouponCode(pricing.couponCode);
       setCouponDiscountAmount(pricing.couponDiscountAmount);
-      setLynkidUrl(pricing.lynkidUrl);
       setMinHourlyRate(minRate);
       setLoading(false);
     });
@@ -280,14 +280,12 @@ export default function PsikologPage() {
             discountPercent={discountPercent}
             couponCode={couponCode}
             couponDiscountAmount={couponDiscountAmount}
-            lynkidUrl={lynkidUrl}
             minHourlyRate={minHourlyRate}
-            onSaved={(rate, discount, coupon, couponAmount, lynk) => {
+            onSaved={(rate, discount, coupon, couponAmount) => {
               setHourlyRate(rate);
               setDiscountPercent(discount);
               setCouponCode(coupon);
               setCouponDiscountAmount(couponAmount);
-              setLynkidUrl(lynk);
             }}
           />
         )}
@@ -418,7 +416,6 @@ function HourlyRateCard({
   discountPercent,
   couponCode,
   couponDiscountAmount,
-  lynkidUrl,
   minHourlyRate,
   onSaved,
 }: {
@@ -427,15 +424,13 @@ function HourlyRateCard({
   discountPercent: number;
   couponCode: string;
   couponDiscountAmount: number;
-  lynkidUrl: string;
   minHourlyRate: number;
-  onSaved: (rate: number, discount: number, coupon: string, couponAmount: number, lynk: string) => void;
+  onSaved: (rate: number, discount: number, coupon: string, couponAmount: number) => void;
 }) {
   const [value, setValue] = useState(hourlyRate ? String(hourlyRate) : "");
   const [discountValue, setDiscountValue] = useState(String(discountPercent || 0));
   const [couponValue, setCouponValue] = useState(couponCode);
   const [couponAmountValue, setCouponAmountValue] = useState(String(couponDiscountAmount || 0));
-  const [lynkValue, setLynkValue] = useState(lynkidUrl);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -444,7 +439,9 @@ function HourlyRateCard({
   const discountNum = Math.min(Math.max(Number(discountValue) || 0, 0), 100);
   const couponAmountNum = Number(couponAmountValue) || 0;
   const afterDiscount = Math.round(rateNum * (1 - discountNum / 100));
-  const finalRate = couponValue.trim() ? Math.max(0, afterDiscount - couponAmountNum) : afterDiscount;
+  const finalRate = roundToNearest1000(
+    couponValue.trim() ? Math.max(0, afterDiscount - couponAmountNum) : afterDiscount
+  );
 
   async function handleSave() {
     if (!rateNum || rateNum <= 0) return;
@@ -455,21 +452,13 @@ function HourlyRateCard({
     setError(null);
     setSaving(true);
     try {
-      await updateProfessionalPricing(
-        profileId,
-        rateNum,
-        discountNum,
-        couponValue,
-        couponAmountNum,
-        lynkValue
-      );
+      await updateProfessionalPricing(profileId, rateNum, discountNum, couponValue, couponAmountNum);
       setSaved(true);
       onSaved(
-        rateNum,
+        roundUpTo1000(rateNum),
         discountNum,
         couponValue.trim() ? couponValue.trim().toUpperCase() : "",
-        couponAmountNum,
-        lynkValue.trim()
+        couponAmountNum
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan tarif.");
@@ -588,20 +577,10 @@ function HourlyRateCard({
         </div>
       </div>
 
-      <div className="mt-3">
-        <label className="mb-1 block text-xs font-medium text-slate-600">
-          Link Pembayaran Lynk.id (opsional — dipakai jika platform memakai gateway Lynk.id)
-        </label>
-        <input
-          value={lynkValue}
-          onChange={(e) => {
-            setLynkValue(e.target.value);
-            setSaved(false);
-          }}
-          placeholder="https://lynk.id/namamu/produk-konsultasi"
-          className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
-        />
-      </div>
+      <p className="mt-3 text-[11px] text-slate-400">
+        Tarif otomatis dibulatkan ke atas ke kelipatan Rp1.000 saat disimpan (untuk gateway
+        Lynk.id).
+      </p>
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       {!error && (discountNum > 0 || couponValue.trim()) && rateNum > 0 && (

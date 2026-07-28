@@ -120,8 +120,8 @@ create table if not exists public.psychologist_profiles (
   -- coupon_code at checkout to get coupon_discount_amount (Rp) off.
   coupon_code text,
   coupon_discount_amount integer,
-  -- Lynk.id product payment link a Psikolog Profesional creates for their own
-  -- hourly consultation (used when payment_gateway = 'lynkid').
+  -- Deprecated/unused: per-psychologist Lynk.id link, superseded by the single
+  -- global site_settings.lynkid_product_url (one Rp1.000 product, paid by qty).
   lynkid_url text
 );
 
@@ -256,8 +256,8 @@ create table if not exists public.packages (
   -- get coupon_discount_amount (Rp) off, on top of the price/original_price discount.
   coupon_code text,
   coupon_discount_amount integer,
-  -- Lynk.id product payment link for this package (admin creates the product on
-  -- lynk.id manually — Lynk has no API to mint payment links programmatically).
+  -- Deprecated/unused: per-package Lynk.id link, superseded by the single global
+  -- site_settings.lynkid_product_url (one Rp1.000 product, paid by qty).
   lynkid_url text
 );
 
@@ -485,6 +485,10 @@ alter table public.site_settings add column if not exists logo_url text;
 alter table public.site_settings add column if not exists teman_curhat_admin_fee integer not null default 14000;
 alter table public.site_settings add column if not exists profesional_admin_fee_percent integer not null default 10;
 alter table public.site_settings add column if not exists profesional_min_hourly_rate integer not null default 0;
+-- Single global Lynk.id product link priced at Rp1 — at checkout the patient sets
+-- the quantity equal to the final total in rupiah, so one product covers every
+-- package and every professional's rate (no per-item links needed).
+alter table public.site_settings add column if not exists lynkid_product_url text;
 
 -- Older databases created the payment_gateway check before 'lynkid' existed —
 -- rebuild the constraint so the new option is accepted.
