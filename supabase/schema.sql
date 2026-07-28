@@ -253,12 +253,17 @@ create table if not exists public.transactions (
   -- share. Teman Curhat uses a flat fee (site_settings.teman_curhat_admin_fee);
   -- Psikolog Profesional uses a percentage (site_settings.profesional_admin_fee_percent).
   admin_fee_amount integer,
-  psychologist_share_amount integer
+  psychologist_share_amount integer,
+  -- For a direct Psikolog Profesional payment: whether this transaction has
+  -- already been used to start its one paid session (prevents reusing a single
+  -- payment to start unlimited sessions).
+  session_consumed boolean not null default false
 );
 
 alter table public.transactions add column if not exists psychologist_id uuid references public.profiles (id);
 alter table public.transactions add column if not exists admin_fee_amount integer;
 alter table public.transactions add column if not exists psychologist_share_amount integer;
+alter table public.transactions add column if not exists session_consumed boolean not null default false;
 
 create table if not exists public.user_subscriptions (
   id uuid primary key default gen_random_uuid(),
@@ -267,15 +272,24 @@ create table if not exists public.user_subscriptions (
   package_name text,
   total_quota integer not null default 1,
   used_quota integer not null default 0,
+  -- Per-session duration captured from the package at purchase time — a session
+  -- consumes exactly one quota slot for up to this many minutes; unused minutes
+  -- within a session are not banked for later.
+  duration_minutes integer not null default 60,
   expires_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.user_subscriptions add column if not exists duration_minutes integer not null default 60;
 
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid references public.profiles (id),
   psychologist_id uuid references public.profiles (id),
   subscription_id uuid references public.user_subscriptions (id),
+  -- Set for a Psikolog Profesional session: the specific paid transaction this
+  -- session consumed (see transactions.session_consumed).
+  transaction_id uuid references public.transactions (id),
   scheduled_at timestamptz not null default now(),
   duration_minutes integer not null default 60,
   status text not null default 'scheduled'
@@ -283,6 +297,73 @@ create table if not exists public.sessions (
   started_at timestamptz,
   ended_at timestamptz
 );
+
+alter table public.sessions add column if not exists transaction_id uuid references public.transactions (id);
+
+-- Atomically claims one quota slot from the caller's most recent active Teman
+-- Curhat subscription (locks the row to avoid a double-spend from concurrent
+-- session starts) and returns that package's per-session duration, or NULL if
+-- no quota is left — the session is never granted more or less time than what
+-- was actually purchased, and unused minutes are not banked for later.
+create or replace function public.consume_subscription_quota(p_patient_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sub_id uuid;
+  v_duration integer;
+begin
+  if p_patient_id is distinct from auth.uid() then
+    return null;
+  end if;
+
+  select id, duration_minutes into v_sub_id, v_duration
+  from public.user_subscriptions
+  where patient_id = p_patient_id
+    and used_quota < total_quota
+    and (expires_at is null or expires_at > now())
+  order by created_at desc
+  limit 1
+  for update;
+
+  if v_sub_id is null then
+    return null;
+  end if;
+
+  update public.user_subscriptions set used_quota = used_quota + 1 where id = v_sub_id;
+  return v_duration;
+end;
+$$;
+
+grant execute on function public.consume_subscription_quota(uuid) to authenticated;
+
+-- Atomically marks a paid direct Psikolog Profesional transaction as consumed
+-- so it can only ever be used to start one session. Returns false (without
+-- starting anything) if the transaction doesn't belong to the caller, isn't
+-- paid, or was already consumed by an earlier session.
+create or replace function public.consume_transaction_session(p_transaction_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_updated boolean;
+begin
+  update public.transactions
+  set session_consumed = true
+  where id = p_transaction_id
+    and patient_id = auth.uid()
+    and status = 'paid'
+    and session_consumed = false
+  returning true into v_updated;
+  return coalesce(v_updated, false);
+end;
+$$;
+
+grant execute on function public.consume_transaction_session(uuid) to authenticated;
 
 create table if not exists public.medical_records (
   id uuid primary key default gen_random_uuid(),

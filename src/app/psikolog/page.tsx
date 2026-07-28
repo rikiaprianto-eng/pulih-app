@@ -214,9 +214,18 @@ export default function PsikologPage() {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="font-heading text-xl font-bold text-slate-900">
-              Halo, {profile.full_name?.split(" ")[0] ?? "Psikolog"}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-heading text-xl font-bold text-slate-900">
+                Halo, {profile.full_name?.split(" ")[0] ?? "Psikolog"}
+              </h1>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  category === "profesional" ? "bg-sky-100 text-sky-700" : "bg-amber-50 text-amber-700"
+                }`}
+              >
+                {category === "profesional" ? "Psikolog Profesional" : "Teman Curhat"}
+              </span>
+            </div>
             <p className="mt-1 text-sm text-slate-500">Berikut ringkasan aktivitasmu hari ini.</p>
           </div>
 

@@ -63,7 +63,7 @@ export const handler: Handler = async (event) => {
 
   const { data: tx } = await admin
     .from("transactions")
-    .select("*, packages(name, session_quota)")
+    .select("*, packages(name, session_quota, duration_minutes)")
     .eq("id", notif.order_id)
     .maybeSingle();
   if (!tx) {
@@ -97,6 +97,7 @@ export const handler: Handler = async (event) => {
         package_name: tx.packages?.name ?? "Paket Konseling",
         total_quota: tx.packages?.session_quota ?? 1,
         used_quota: 0,
+        duration_minutes: tx.packages?.duration_minutes ?? 60,
         expires_at: expiresAt.toISOString(),
       });
     }

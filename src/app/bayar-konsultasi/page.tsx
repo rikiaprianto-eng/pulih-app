@@ -55,6 +55,7 @@ export default function BayarKonsultasiPage() {
   const [selectedMethod, setSelectedMethod] = useState(paymentMethods[0]);
   const [processing, setProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [paidTransactionId, setPaidTransactionId] = useState<string | null>(null);
 
   const useMidtrans = settings?.paymentGateway === "midtrans" && !!settings.midtransClientKey;
 
@@ -102,11 +103,17 @@ export default function BayarKonsultasiPage() {
 
     if (useMidtrans) {
       try {
-        const { token } = await createDirectMidtransTransaction(psy.id);
+        const { token, transactionId } = await createDirectMidtransTransaction(psy.id);
         if (!window.snap) throw new Error("Midtrans belum siap, coba lagi sebentar.");
         window.snap.pay(token, {
-          onSuccess: () => setStep("success"),
-          onPending: () => setStep("success"),
+          onSuccess: () => {
+            setPaidTransactionId(transactionId);
+            setStep("success");
+          },
+          onPending: () => {
+            setPaidTransactionId(transactionId);
+            setStep("success");
+          },
           onError: () => setPayError("Pembayaran gagal. Coba lagi."),
           onClose: () => setProcessing(false),
         });
@@ -118,7 +125,8 @@ export default function BayarKonsultasiPage() {
     }
 
     try {
-      await createDirectCheckout(profile.id, psy.id, finalRate, selectedMethod.name);
+      const transactionId = await createDirectCheckout(profile.id, psy.id, finalRate, selectedMethod.name);
+      setPaidTransactionId(transactionId);
       setStep("success");
     } catch {
       setPayError("Gagal memproses pembayaran. Coba lagi.");
@@ -335,8 +343,13 @@ export default function BayarKonsultasiPage() {
                 Konsultasimu dengan {psy.name} sudah siap dimulai.
               </p>
               <button
-                onClick={() => router.push(`/session?psy=${psy.id}&name=${encodeURIComponent(psy.name)}`)}
-                className="mt-6 w-full rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white"
+                onClick={() =>
+                  router.push(
+                    `/session?psy=${psy.id}&name=${encodeURIComponent(psy.name)}&tx=${paidTransactionId ?? ""}`
+                  )
+                }
+                disabled={!paidTransactionId}
+                className="mt-6 w-full rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 py-3 text-sm font-semibold text-white disabled:opacity-70"
               >
                 Mulai Sesi Sekarang
               </button>

@@ -18,21 +18,42 @@ import {
 } from "lucide-react";
 import { avatarUrl } from "@/lib/utils";
 import { useRequireAuth } from "@/lib/useAuth";
-import { startSession, endSession, extendSession } from "@/lib/queries";
+import {
+  startTemanCurhatSession,
+  startProfessionalSession,
+  endSession,
+  extendSession,
+  StartSessionResult,
+} from "@/lib/queries";
 import { useCallRoom, notifyIncomingCall } from "@/lib/useCallRoom";
 
-const START_SECONDS = 45 * 60;
 const WARNING_THRESHOLD = 10 * 60;
 
 type ChatMessage = { id: number; sender: "me" | "psy"; text: string };
+
+/** Midtrans confirms payment via an async webhook — retry briefly in case it hasn't landed yet. */
+async function startProfessionalSessionWithRetry(
+  patientId: string,
+  psychologistId: string,
+  transactionId: string
+): Promise<StartSessionResult> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const result = await startProfessionalSession(patientId, psychologistId, transactionId);
+    if (result.ok) return result;
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return { ok: false, reason: "invalid_transaction" };
+}
 
 export default function SessionPage() {
   const router = useRouter();
   const { profile, loading: authLoading } = useRequireAuth(["patient"]);
   const [psyId, setPsyId] = useState<string | null>(null);
   const [psyName, setPsyName] = useState("Psikolog Pulih");
+  const [transactionId, setTransactionId] = useState<string | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(START_SECONDS);
+  const [startError, setStartError] = useState<"no_quota" | "invalid_transaction" | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -54,22 +75,35 @@ export default function SessionPage() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("psy");
     const name = params.get("name");
+    const tx = params.get("tx");
     if (id) setPsyId(id);
     if (name) setPsyName(name);
+    if (tx) setTransactionId(tx);
   }, []);
 
   useEffect(() => {
-    if (!profile || !psyId || dbSessionId) return;
-    startSession(profile.id, psyId).then((row) => {
-      setDbSessionId(row.id);
-      notifyIncomingCall(psyId, {
-        sessionId: row.id,
-        patientId: profile.id,
-        patientName: profile.full_name ?? "Pasien Pulih",
+    if (!profile || !psyId || dbSessionId || startError) return;
+
+    async function start() {
+      const result = transactionId
+        ? await startProfessionalSessionWithRetry(profile!.id, psyId!, transactionId)
+        : await startTemanCurhatSession(profile!.id, psyId!);
+
+      if (!result.ok) {
+        setStartError(result.reason);
+        return;
+      }
+      setDbSessionId(result.sessionId);
+      setSecondsLeft(result.durationMinutes * 60);
+      notifyIncomingCall(psyId!, {
+        sessionId: result.sessionId,
+        patientId: profile!.id,
+        patientName: profile!.full_name ?? "Pasien Pulih",
       });
-    });
+    }
+    start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, psyId]);
+  }, [profile, psyId, transactionId]);
 
   useEffect(() => {
     if (localVideoRef.current) localVideoRef.current.srcObject = call.localStream;
@@ -84,7 +118,7 @@ export default function SessionPage() {
   }, [call.status]);
 
   useEffect(() => {
-    if (ended) return;
+    if (ended || !dbSessionId) return;
     const timer = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
@@ -152,6 +186,47 @@ export default function SessionPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+      </div>
+    );
+  }
+
+  if (startError === "no_quota") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center">
+        <p className="text-sm text-white/70">
+          Kuota sesi Teman Curhat kamu sudah habis. Beli paket lagi untuk lanjut konseling.
+        </p>
+        <button
+          onClick={() => router.push("/pricing")}
+          className="rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white"
+        >
+          Lihat Paket
+        </button>
+      </div>
+    );
+  }
+
+  if (startError === "invalid_transaction") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center">
+        <p className="text-sm text-white/70">
+          Pembayaran untuk sesi ini tidak ditemukan atau sudah pernah digunakan.
+        </p>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="rounded-xl bg-gradient-to-r from-sky-600 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white"
+        >
+          Kembali ke Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (!dbSessionId) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        <p className="text-sm text-white/50">Menyiapkan sesi...</p>
       </div>
     );
   }
@@ -374,25 +449,16 @@ export default function SessionPage() {
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-slate-800">
             <h3 className="font-heading text-lg font-semibold">Perpanjang Sesi 15 Menit</h3>
             <p className="mt-1.5 text-sm text-slate-500">
-              Pilih metode perpanjangan sesi tanpa memutus koneksi video.
+              Waktu sesimu sudah hampir habis. Perpanjang tanpa memutus koneksi video.
             </p>
             <div className="mt-4 space-y-2">
               <button
                 onClick={() => confirmExtend()}
                 className="w-full rounded-xl border border-teal-500 bg-teal-50 px-4 py-3 text-left text-sm font-semibold text-teal-700"
               >
-                Potong dari kuota langganan
-                <span className="block text-xs font-normal text-teal-600">
-                  Sisa kuota akan berkurang 1 sesi
-                </span>
-              </button>
-              <button
-                onClick={() => confirmExtend()}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700"
-              >
                 Bayar instan Rp49.000
-                <span className="block text-xs font-normal text-slate-500">
-                  Via metode pembayaran tersimpan
+                <span className="block text-xs font-normal text-teal-600">
+                  Terkonfirmasi otomatis, tanpa perlu verifikasi admin
                 </span>
               </button>
             </div>

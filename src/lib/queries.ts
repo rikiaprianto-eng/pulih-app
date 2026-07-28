@@ -194,6 +194,7 @@ export type SubscriptionView = {
   packageName: string;
   totalQuota: number;
   usedQuota: number;
+  durationMinutes: number;
   expiresAt: string;
 };
 
@@ -210,6 +211,7 @@ export async function fetchActiveSubscription(patientId: string): Promise<Subscr
     packageName: data.package_name ?? "Paket Konseling",
     totalQuota: data.total_quota,
     usedQuota: data.used_quota,
+    durationMinutes: data.duration_minutes ?? 60,
     expiresAt: data.expires_at
       ? new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(
           new Date(data.expires_at)
@@ -329,6 +331,7 @@ export async function createCheckout(
     package_name: pkg.name,
     total_quota: pkg.sessionQuota,
     used_quota: 0,
+    duration_minutes: pkg.durationMinutes,
     expires_at: expiresAt.toISOString(),
   });
   if (subError) throw subError;
@@ -340,7 +343,7 @@ export async function createDirectCheckout(
   psychologistId: string,
   amount: number,
   paymentMethodName: string
-) {
+): Promise<string> {
   const { data: settings } = await supabase
     .from("site_settings")
     .select("profesional_admin_fee_percent")
@@ -351,20 +354,42 @@ export async function createDirectCheckout(
     settings?.profesional_admin_fee_percent ?? DEFAULT_SITE_SETTINGS.profesionalAdminFeePercent
   );
 
-  const { error } = await supabase.from("transactions").insert({
-    patient_id: patientId,
-    psychologist_id: psychologistId,
-    amount,
-    payment_method: paymentMethodName,
-    status: "paid",
-    admin_fee_amount: adminFeeAmount,
-    psychologist_share_amount: psychologistShareAmount,
-  });
-  if (error) throw error;
+  const { data: tx, error } = await supabase
+    .from("transactions")
+    .insert({
+      patient_id: patientId,
+      psychologist_id: psychologistId,
+      amount,
+      payment_method: paymentMethodName,
+      status: "paid",
+      admin_fee_amount: adminFeeAmount,
+      psychologist_share_amount: psychologistShareAmount,
+    })
+    .select()
+    .single();
+  if (error || !tx) throw error;
+  return tx.id;
 }
 
-/** Starts (or reuses) a counseling session between the logged-in patient and a psychologist. */
-export async function startSession(patientId: string, psychologistId: string, durationMinutes = 60) {
+export type StartSessionResult =
+  | { ok: true; sessionId: string; durationMinutes: number }
+  | { ok: false; reason: "no_quota" | "invalid_transaction" };
+
+/**
+ * Starts a Teman Curhat session by atomically claiming one quota slot from the
+ * patient's active package subscription (see consume_subscription_quota).
+ * Fails with "no_quota" if they have none left — a session never grants more
+ * time than the package actually paid for, and unused minutes aren't banked.
+ */
+export async function startTemanCurhatSession(
+  patientId: string,
+  psychologistId: string
+): Promise<StartSessionResult> {
+  const { data: durationMinutes, error: quotaError } = await supabase.rpc("consume_subscription_quota", {
+    p_patient_id: patientId,
+  });
+  if (quotaError || durationMinutes == null) return { ok: false, reason: "no_quota" };
+
   const { data, error } = await supabase
     .from("sessions")
     .insert({
@@ -377,7 +402,40 @@ export async function startSession(patientId: string, psychologistId: string, du
     .select()
     .single();
   if (error || !data) throw error;
-  return data;
+  return { ok: true, sessionId: data.id, durationMinutes };
+}
+
+/**
+ * Starts a Psikolog Profesional session by atomically marking the patient's
+ * paid direct transaction as consumed (see consume_transaction_session), so a
+ * single hourly payment can only ever unlock one session. Fixed at 60 minutes
+ * to match the "per jam" (hourly) rate they paid.
+ */
+export async function startProfessionalSession(
+  patientId: string,
+  psychologistId: string,
+  transactionId: string
+): Promise<StartSessionResult> {
+  const { data: consumed, error: consumeError } = await supabase.rpc("consume_transaction_session", {
+    p_transaction_id: transactionId,
+  });
+  if (consumeError || !consumed) return { ok: false, reason: "invalid_transaction" };
+
+  const durationMinutes = 60;
+  const { data, error } = await supabase
+    .from("sessions")
+    .insert({
+      patient_id: patientId,
+      psychologist_id: psychologistId,
+      transaction_id: transactionId,
+      duration_minutes: durationMinutes,
+      status: "ongoing",
+      started_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error || !data) throw error;
+  return { ok: true, sessionId: data.id, durationMinutes };
 }
 
 /**
